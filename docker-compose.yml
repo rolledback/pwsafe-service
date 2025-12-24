@@ -1,0 +1,13 @@
+services:
+  pwsafe:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./safes:/safes:ro
+    environment:
+      - PWSAFE_DIRECTORY=/safes
+      - PWSAFE_PORT=8080
+      - PWSAFE_HOST=0.0.0.0
+      - PWSAFE_STATIC_DIR=/app/static
+    restart: unless-stopped
