@@ -10,7 +10,7 @@ type SafeFile struct {
 
 type Group struct {
 	Name    string   `json:"name"`
-	Groups  []Group  `json:"groups,omitempty"`
+	Groups  []*Group `json:"groups,omitempty"`
 	Entries []Entry  `json:"entries,omitempty"`
 }
 
@@ -23,7 +23,7 @@ type Entry struct {
 }
 
 type SafeStructure struct {
-	Groups []Group `json:"groups"`
+	Groups []*Group `json:"groups"`
 }
 
 type UnlockRequest struct {

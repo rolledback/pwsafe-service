@@ -140,7 +140,7 @@ func (s *SafeService) buildGroupTree(db *pwsafe.V3) *models.SafeStructure {
 			if !exists {
 				group = &models.Group{
 					Name:    part,
-					Groups:  []models.Group{},
+					Groups:  []*models.Group{},
 					Entries: []models.Entry{},
 				}
 				groupMap[currentPath] = group
@@ -148,7 +148,7 @@ func (s *SafeService) buildGroupTree(db *pwsafe.V3) *models.SafeStructure {
 				if i == 0 {
 					rootGroups[currentPath] = group
 				} else if parentGroup != nil {
-					parentGroup.Groups = append(parentGroup.Groups, *group)
+					parentGroup.Groups = append(parentGroup.Groups, group)
 				}
 			}
 
@@ -160,9 +160,9 @@ func (s *SafeService) buildGroupTree(db *pwsafe.V3) *models.SafeStructure {
 		}
 	}
 
-	var groups []models.Group
+	var groups []*models.Group
 	for _, group := range rootGroups {
-		groups = append(groups, *group)
+		groups = append(groups, group)
 	}
 
 	return &models.SafeStructure{
