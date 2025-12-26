@@ -1,0 +1,20 @@
+#!/bin/bash
+set -e
+
+# Configuration - Update these values for your local environment (paths should be relative to backend/)
+SAFES_DIR="./testdata"         # Path to .psafe3 files
+STATIC_DIR="../frontend/dist"  # Path to frontend build output
+
+echo "Building frontend..."
+cd frontend && npm run build
+
+echo "Building backend..."
+cd ../backend && go build -o pwsafe-service cmd/pwsafe-service/main.go
+
+echo "Stopping any running instance..."
+pkill -f pwsafe-service || true
+
+echo "Starting pwsafe-service..."
+PWSAFE_DIRECTORY="$SAFES_DIR" \
+PWSAFE_STATIC_DIR="$STATIC_DIR" \
+./pwsafe-service
