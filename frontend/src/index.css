@@ -327,12 +327,42 @@ button.primary:hover {
 
 /* Loading, Error, Empty States */
 .loading,
-.error,
-.empty {
+.error {
   text-align: center;
   padding: 40px 20px;
   color: #666;
   font-size: 14px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 120px 40px;
+}
+
+.empty-box {
+  display: inline-block;
+  width: 200px;
+  height: 200px;
+  border: 4px solid #e0e0e0;
+  border-radius: 16px;
+  background-color: #fafafa;
+  margin-bottom: 40px;
+  position: relative;
+}
+
+.empty-box::before {
+  content: "∅";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 80px;
+  color: #d0d0d0;
+}
+
+.empty-message {
+  color: #7f8c8d;
+  font-size: 1.2rem;
 }
 
 .error {

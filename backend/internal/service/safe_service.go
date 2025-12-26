@@ -21,7 +21,7 @@ func NewSafeService(safesDirectory string) *SafeService {
 }
 
 func (s *SafeService) ListSafes() ([]models.SafeFile, error) {
-	var safes []models.SafeFile
+	safes := []models.SafeFile{}
 
 	entries, err := os.ReadDir(s.safesDirectory)
 	if err != nil {

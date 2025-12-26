@@ -59,7 +59,10 @@ function BrowseSafes() {
     return (
       <div className="browse-container">
         <h1>Select a Password Safe</h1>
-        <div className="empty">No password safes found</div>
+        <div className="empty-state">
+          <div className="empty-box"></div>
+          <div className="empty-message">No safes found</div>
+        </div>
       </div>
     );
   }
