@@ -265,18 +265,7 @@ button.primary:hover {
 
 .indent {
   display: inline-block;
-}
-
-.tree-item.level-0 .indent {
-  width: 0;
-}
-
-.tree-item.level-1 .indent {
-  width: 24px;
-}
-
-.tree-item.level-2 .indent {
-  width: 48px;
+  flex-shrink: 0;
 }
 
 .expand-icon {
