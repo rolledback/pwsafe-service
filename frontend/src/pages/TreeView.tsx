@@ -21,8 +21,8 @@ type TreeItemProps = {
 
 function TreeItem({ level, isGroup, isExpanded, name, icon, entry, onCopy, onToggle }: TreeItemProps) {
   return (
-    <div className={`tree-item ${isGroup ? "group" : ""} level-${level}`} onClick={onToggle}>
-      <span className="indent"></span>
+    <div className={`tree-item ${isGroup ? "group" : ""}`} onClick={onToggle}>
+      <span className="indent" style={{ width: `${level * 24}px` }}></span>
       <span className="expand-icon">{isGroup ? (isExpanded ? "▼" : "▶") : ""}</span>
       <span className="item-icon">{icon}</span>
       <span className="item-name">{name}</span>
