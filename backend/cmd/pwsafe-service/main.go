@@ -58,6 +58,19 @@ func main() {
 		http.StripPrefix("/web", fs).ServeHTTP(w, r)
 	})
 
+	// Redirect all non-/api routes to /web
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if len(r.URL.Path) >= 4 && r.URL.Path[:4] == "/api" {
+			http.NotFound(w, r)
+			return
+		}
+		if len(r.URL.Path) >= 4 && r.URL.Path[:4] == "/web" {
+			http.NotFound(w, r)
+			return
+		}
+		http.Redirect(w, r, "/web"+r.URL.Path, http.StatusMovedPermanently)
+	})
+
 	addr := fmt.Sprintf("%s:%s", cfg.ServerHost, cfg.ServerPort)
 	log.Printf("Starting server on %s", addr)
 	if err := http.ListenAndServe(addr, nil); err != nil {
