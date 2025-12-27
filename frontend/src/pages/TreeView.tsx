@@ -114,23 +114,29 @@ function TreeView() {
     );
 
     if (isExpanded) {
-      group.entries?.forEach((entry) => {
-        elements.push(
-          <TreeItem
-            key={entry.uuid}
-            level={level + 1}
-            isGroup={false}
-            name={entry.title}
-            icon="🔑"
-            entry={entry}
-            onCopy={handleCopyPassword}
-          />,
-        );
-      });
+      group.entries
+        ?.slice()
+        .sort((a, b) => a.title.localeCompare(b.title))
+        .forEach((entry) => {
+          elements.push(
+            <TreeItem
+              key={entry.uuid}
+              level={level + 1}
+              isGroup={false}
+              name={entry.title}
+              icon="🔑"
+              entry={entry}
+              onCopy={handleCopyPassword}
+            />,
+          );
+        });
 
-      group.groups?.forEach((subGroup) => {
-        elements.push(...renderGroup(subGroup, level + 1, groupPath));
-      });
+      group.groups
+        ?.slice()
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .forEach((subGroup) => {
+          elements.push(...renderGroup(subGroup, level + 1, groupPath));
+        });
     }
 
     return elements;
@@ -153,7 +159,12 @@ function TreeView() {
           <div className="safe-name">{safeName}</div>
         </div>
 
-        <div className="tree-container">{structure.groups.map((group) => renderGroup(group, 0))}</div>
+        <div className="tree-container">
+          {structure.groups
+            .slice()
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map((group) => renderGroup(group, 0))}
+        </div>
       </div>
     </div>
   );
