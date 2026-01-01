@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import BrowseSafes from "./pages/BrowseSafes";
 import UnlockSafe from "./pages/UnlockSafe";
 import TreeView from "./pages/TreeView";
@@ -10,6 +10,7 @@ function App() {
         <Route path="/" element={<BrowseSafes />} />
         <Route path="/unlock/:safeName" element={<UnlockSafe />} />
         <Route path="/safe/:safeName" element={<TreeView />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );
