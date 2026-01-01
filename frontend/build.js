@@ -21,6 +21,7 @@ const ctx = await esbuild.context({
 mkdirSync("dist", { recursive: true });
 copyFileSync("index.html", "dist/index.html");
 copyFileSync("src/index.css", "dist/index.css");
+copyFileSync("src/assets/favicons/vault-rose.svg", "dist/favicon.svg");
 
 if (watch) {
   await ctx.watch();
