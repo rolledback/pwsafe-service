@@ -14,8 +14,10 @@ const ctx = await esbuild.context({
   loader: {
     ".tsx": "tsx",
     ".ts": "ts",
+    ".svg": "file",
   },
   jsx: "automatic",
+  publicPath: "/web/",
 });
 
 mkdirSync("dist", { recursive: true });
