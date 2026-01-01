@@ -137,6 +137,13 @@ function TreeView() {
     );
 
     if (isExpanded) {
+      group.groups
+        ?.slice()
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .forEach((subGroup) => {
+          elements.push(...renderGroup(subGroup, level + 1, groupPath));
+        });
+
       group.entries
         ?.slice()
         .sort((a, b) => a.title.localeCompare(b.title))
@@ -153,13 +160,6 @@ function TreeView() {
               onCopyUsername={handleCopyUsername}
             />,
           );
-        });
-
-      group.groups
-        ?.slice()
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .forEach((subGroup) => {
-          elements.push(...renderGroup(subGroup, level + 1, groupPath));
         });
     }
 
@@ -188,6 +188,21 @@ function TreeView() {
             .slice()
             .sort((a, b) => a.name.localeCompare(b.name))
             .map((group) => renderGroup(group, 0))}
+          {structure.entries
+            ?.slice()
+            .sort((a, b) => a.title.localeCompare(b.title))
+            .map((entry) => (
+              <TreeItem
+                key={entry.uuid}
+                level={0}
+                isGroup={false}
+                name={`${entry.title} [${entry.username}]`}
+                icon="🔑"
+                entry={entry}
+                onCopyPassword={handleCopyPassword}
+                onCopyUsername={handleCopyUsername}
+              />
+            ))}
         </div>
       </div>
     </div>

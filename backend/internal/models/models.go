@@ -23,7 +23,8 @@ type Entry struct {
 }
 
 type SafeStructure struct {
-	Groups []*Group `json:"groups"`
+	Groups  []*Group `json:"groups"`
+	Entries []Entry  `json:"entries"`
 }
 
 type UnlockRequest struct {

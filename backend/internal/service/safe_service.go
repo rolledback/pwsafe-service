@@ -99,6 +99,7 @@ func (s *SafeService) GetEntryPassword(filename, password, entryUUID string) (st
 func (s *SafeService) buildGroupTree(db *pwsafe.V3) *models.SafeStructure {
 	groupMap := make(map[string]*models.Group)
 	rootGroups := make(map[string]*models.Group)
+	rootEntries := []models.Entry{}
 
 	for _, record := range db.Records {
 		groupPath := record.Group
@@ -122,7 +123,8 @@ func (s *SafeService) buildGroupTree(db *pwsafe.V3) *models.SafeStructure {
 		}
 
 		if groupPath == "" {
-			groupPath = "Root"
+			rootEntries = append(rootEntries, entry)
+			continue
 		}
 
 		parts := strings.Split(groupPath, ".")
@@ -166,6 +168,7 @@ func (s *SafeService) buildGroupTree(db *pwsafe.V3) *models.SafeStructure {
 	}
 
 	return &models.SafeStructure{
-		Groups: groups,
+		Groups:  groups,
+		Entries: rootEntries,
 	}
 }

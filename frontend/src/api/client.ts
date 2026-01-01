@@ -22,6 +22,7 @@ export type Group = {
 
 export type SafeStructure = {
   groups: Group[];
+  entries: Entry[];
 };
 
 export type EntryPasswordResponse = {
