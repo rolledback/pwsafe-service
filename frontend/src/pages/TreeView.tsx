@@ -15,11 +15,12 @@ type TreeItemProps = {
   name: string;
   icon: string;
   entry?: Entry;
-  onCopy?: (entry: Entry) => void;
+  onCopyPassword?: (entry: Entry) => void;
+  onCopyUsername?: (entry: Entry) => void;
   onToggle?: () => void;
 };
 
-function TreeItem({ level, isGroup, isExpanded, name, icon, entry, onCopy, onToggle }: TreeItemProps) {
+function TreeItem({ level, isGroup, isExpanded, name, icon, entry, onCopyPassword, onCopyUsername, onToggle }: TreeItemProps) {
   return (
     <div className={`tree-item ${isGroup ? "group" : ""}`} onClick={onToggle}>
       <span className="indent" style={{ width: `${level * 24}px` }}></span>
@@ -27,15 +28,26 @@ function TreeItem({ level, isGroup, isExpanded, name, icon, entry, onCopy, onTog
       <span className="item-icon">{icon}</span>
       <span className="item-name">{name}</span>
       {!isGroup && entry && (
-        <button
-          className="copy-button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onCopy?.(entry);
-          }}
-        >
-          Copy
-        </button>
+        <>
+          <button
+            className="copy-button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCopyUsername?.(entry);
+            }}
+          >
+            Copy 👤
+          </button>
+          <button
+            className="copy-button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCopyPassword?.(entry);
+            }}
+          >
+            Copy 🔑
+          </button>
+        </>
       )}
     </div>
   );
@@ -96,6 +108,17 @@ function TreeView() {
     }
   };
 
+  const handleCopyUsername = async (entry: Entry) => {
+    try {
+      await navigator.clipboard.writeText(entry.username);
+      setCopyMessage(`Copied username for ${entry.title}`);
+      setTimeout(() => setCopyMessage(null), 3000);
+    } catch (err) {
+      setCopyMessage(err instanceof Error ? err.message : "Failed to copy username");
+      setTimeout(() => setCopyMessage(null), 3000);
+    }
+  };
+
   const renderGroup = (group: Group, level: number, parentPath: string = ""): React.ReactElement[] => {
     const groupPath = getGroupPath(group.name, parentPath);
     const isExpanded = expandedGroups.has(groupPath);
@@ -126,7 +149,8 @@ function TreeView() {
               name={`${entry.title} [${entry.username}]`}
               icon="🔑"
               entry={entry}
-              onCopy={handleCopyPassword}
+              onCopyPassword={handleCopyPassword}
+              onCopyUsername={handleCopyUsername}
             />,
           );
         });

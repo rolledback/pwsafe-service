@@ -304,6 +304,8 @@ button.primary:hover {
   opacity: 0;
   transition: opacity 0.15s;
   flex: 0;
+  white-space: nowrap;
+  margin-left: 6px;
 }
 
 .tree-item:hover .copy-button {
