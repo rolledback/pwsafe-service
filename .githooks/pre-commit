@@ -1,0 +1,7 @@
+#!/bin/sh
+
+# Run prettier format on frontend
+cd frontend && npm run format:fix
+
+# Re-add any formatted files to staging
+git add -u

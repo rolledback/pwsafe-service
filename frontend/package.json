@@ -4,11 +4,13 @@
   "description": "Frontend for pwsafe-service",
   "type": "module",
   "scripts": {
+    "preinstall": "git config core.hooksPath .githooks",
     "dev": "node build.js --watch & serve dist -l 3000 --basepath /web",
     "build": "tsc && node build.js --production",
     "start": "serve dist -l 3000 --basepath /web",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "format:fix": "prettier --write . --log-level warn"
   },
   "author": "",
   "license": "ISC",
