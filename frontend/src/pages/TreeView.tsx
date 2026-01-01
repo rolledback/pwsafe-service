@@ -123,7 +123,7 @@ function TreeView() {
               key={entry.uuid}
               level={level + 1}
               isGroup={false}
-              name={entry.title}
+              name={`${entry.title} [${entry.username}]`}
               icon="🔑"
               entry={entry}
               onCopy={handleCopyPassword}
