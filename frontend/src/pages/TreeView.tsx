@@ -180,7 +180,13 @@ function TreeView() {
 
       <div className="tree-card">
         <div className="header">
-          <div className="safe-name">{safeName}</div>
+          <div className="safe-header-content">
+            <div className="safe-icon">🔒</div>
+            <div className="safe-name">{safeName}</div>
+          </div>
+          <button className="close-button" onClick={() => navigate("/")}>
+            ✕
+          </button>
         </div>
 
         <div className="tree-container">

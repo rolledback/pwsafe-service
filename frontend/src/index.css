@@ -246,11 +246,53 @@ button.primary:hover {
 .header {
   padding: 20px 24px;
   border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.safe-header-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header .safe-icon {
+  width: 36px;
+  height: 36px;
+  background: #e8e8e8;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
 }
 
 .header .safe-name {
   font-size: 20px;
   font-weight: 600;
+  color: #333;
+}
+
+.close-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  color: #999;
+  font-size: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.close-button:hover {
+  background: #f0f0f0;
   color: #333;
 }
 
