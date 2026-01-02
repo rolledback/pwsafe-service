@@ -452,11 +452,36 @@ button.primary:hover {
 
 /* Footer Styles */
 .app-footer {
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
   padding: 16px 20px;
   border-top: 1px solid #e0e0e0;
   background: white;
   margin-top: auto;
+}
+
+.favicon-icon {
+  width: 24px;
+  height: 24px;
+  display: block;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.favicon-icon:hover {
+  opacity: 1;
+}
+
+.footer-separator {
+  display: inline-block;
+  width: 2px;
+  height: 20px;
+  background: #999;
+  border-radius: 1px;
+  vertical-align: middle;
 }
 
 .github-link {
