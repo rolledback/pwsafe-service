@@ -1,0 +1,27 @@
+# PowerShell script for local e2e development
+$ErrorActionPreference = "Stop"
+
+# Configuration - Update these values for your local environment (paths should be relative to backend/)
+$SAFES_DIR = "./testdata"         # Path to .psafe3 files
+$STATIC_DIR = "../frontend/dist"  # Path to frontend build output
+
+Write-Host "Building frontend..."
+Push-Location frontend
+npm run build
+Pop-Location
+
+Write-Host "Building backend..."
+Push-Location backend
+go build -o pwsafe-service.exe cmd/pwsafe-service/main.go
+
+Write-Host "Stopping any running instance..."
+Get-Process -Name "pwsafe-service" -ErrorAction SilentlyContinue | Stop-Process -Force
+
+Write-Host "Starting pwsafe-service..."
+$env:PWSAFE_DIRECTORY = $SAFES_DIR
+$env:PWSAFE_STATIC_DIR = $STATIC_DIR
+try {
+    & .\pwsafe-service.exe
+} finally {
+    Pop-Location
+}
