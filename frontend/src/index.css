@@ -101,6 +101,65 @@ body {
   color: #888;
 }
 
+/* ItemRow Component Styles (reusable list item) */
+.item-row {
+  background: white;
+  border-radius: 6px;
+  padding: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 2px solid transparent;
+}
+
+.item-row:hover {
+  border-color: #4a90e2;
+  background: #f8fbff;
+}
+
+.item-summary {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 16px;
+}
+
+.item-row .item-icon {
+  width: 36px;
+  height: 36px;
+  background: #e8e8e8;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  margin-right: 0;
+}
+
+.item-details {
+  min-width: 0;
+}
+
+.item-row .item-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item-meta {
+  font-size: 12px;
+  color: #888;
+}
+
+.safe-source {
+  color: #4a90e2;
+  font-weight: 500;
+}
+
 /* Unlock Safe Styles */
 .unlock-container {
   display: flex;
@@ -498,4 +557,409 @@ button.primary:hover {
   width: 24px;
   height: 24px;
   display: block;
+}
+
+/* Add Safes Banner */
+.add-banner {
+  background: white;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-top: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #ddd;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.add-banner:hover {
+  border-color: #4a90e2;
+  background: #f8fbff;
+}
+
+.add-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.add-banner-icon {
+  font-size: 20px;
+  color: #4a90e2;
+}
+
+.add-banner-text {
+  font-size: 15px;
+  color: #555;
+  font-weight: 500;
+}
+
+/* Add Safes Page */
+.add-safes-container {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.page-header h1 {
+  font-size: 24px;
+  color: #333;
+}
+
+.source-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Placeholder Page */
+.placeholder-container {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.placeholder-content {
+  text-align: center;
+  padding: 60px 20px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.placeholder-content h2 {
+  font-size: 20px;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.placeholder-content p {
+  font-size: 14px;
+  color: #666;
+}
+
+/* OneDrive Page */
+.container {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.page-header h1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.page-header h1 .icon {
+  font-size: 28px;
+}
+
+/* Connect card */
+.connect-card {
+  background: white;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  text-align: center;
+}
+
+.connect-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.connect-desc {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 20px;
+}
+
+.connect-btn {
+  padding: 12px 32px;
+  background: #0078d4;
+  border: none;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 500;
+  color: white;
+  cursor: pointer;
+}
+
+.connect-btn:hover {
+  background: #106ebe;
+}
+
+.connect-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+/* Account Card (Connected State) */
+.account-card {
+  background: white;
+  border-radius: 8px;
+  padding: 16px 20px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-left: 4px solid #ddd;
+}
+
+.account-card.connected {
+  border-left-color: #22c55e;
+}
+
+.account-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.account-avatar {
+  width: 40px;
+  height: 40px;
+  background: #0078d4;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.account-details .account-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #333;
+}
+
+.account-details .account-email {
+  font-size: 13px;
+  color: #888;
+}
+
+.account-details .account-warning {
+  font-size: 12px;
+  color: #f57c00;
+  margin-top: 2px;
+}
+
+.account-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.disconnect-btn {
+  padding: 8px 14px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #666;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.disconnect-btn:hover {
+  background: #f5f5f5;
+  border-color: #999;
+}
+
+.disconnect-btn:disabled {
+  background: #f5f5f5;
+  color: #999;
+  cursor: not-allowed;
+}
+
+/* Card container with header */
+.card {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+.card-header {
+  padding: 14px 20px;
+  border-bottom: 1px solid #eee;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #666;
+}
+
+.card-meta {
+  font-size: 13px;
+  color: #888;
+}
+
+.card-action {
+  font-size: 13px;
+  color: #4a90e2;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+.card-action:hover {
+  text-decoration: underline;
+}
+
+.card-action:disabled {
+  color: #999;
+  cursor: not-allowed;
+}
+
+/* File rows with toggles */
+.file-row {
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.file-row:last-child {
+  border-bottom: none;
+}
+
+.file-icon {
+  width: 32px;
+  height: 32px;
+  background: #f0f0f0;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.file-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+}
+
+.file-meta {
+  font-size: 12px;
+  color: #888;
+}
+
+/* Toggle switch */
+.toggle {
+  width: 44px;
+  height: 24px;
+  background: #ccc;
+  border-radius: 12px;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.toggle.active {
+  background: #4a90e2;
+}
+
+.toggle::after {
+  content: "";
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  background: white;
+  border-radius: 50%;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.toggle.active::after {
+  transform: translateX(20px);
+}
+
+/* Reauth state styles */
+.account-card.needs-reauth {
+  border-left-color: #f59e0b;
+}
+
+.reconnect-btn {
+  padding: 8px 14px;
+  background: #f59e0b;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: white;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.reconnect-btn:hover {
+  background: #d97706;
+}
+
+.reconnect-btn:disabled {
+  background: #fcd34d;
+  cursor: not-allowed;
+}
+
+.file-row.disabled {
+  opacity: 0.6;
+}
+
+.toggle.disabled {
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.toggle.disabled.active {
+  background: #93c5fd;
+}
+
+.card-action.disabled {
+  color: #ccc;
+  cursor: not-allowed;
+}
+
+.card-action.disabled:hover {
+  text-decoration: none;
+}
+
+/* Error banner */
+.error-banner {
+  background: #ffebee;
+  border: 1px solid #ef5350;
+  border-radius: 4px;
+  padding: 12px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  color: #c62828;
 }

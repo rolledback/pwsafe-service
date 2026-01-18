@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api, SafeFile } from "../api/client";
+import ItemRow from "../components/ItemRow";
 
 function BrowseSafes() {
   const navigate = useNavigate();
@@ -24,8 +25,9 @@ function BrowseSafes() {
     fetchSafes();
   }, []);
 
-  const handleSafeClick = (safeName: string) => {
-    navigate(`/unlock/${safeName}`);
+  const handleSafeClick = (safePath: string) => {
+    const encodedPath = encodeURIComponent(safePath);
+    navigate(`/unlock/${encodedPath}`);
   };
 
   const formatDate = (dateString: string) => {
@@ -55,34 +57,35 @@ function BrowseSafes() {
     );
   }
 
-  if (safes.length === 0) {
-    return (
-      <div className="browse-container">
-        <h1>Select a Password Safe</h1>
-        <div className="empty-state">
-          <div className="empty-box"></div>
-          <div className="empty-message">No safes found</div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="browse-container">
       <h1>Select a Password Safe</h1>
 
       <div className="safe-grid">
-        {safes.map((safe) => (
-          <div key={safe.name} className="safe-row" onClick={() => handleSafeClick(safe.name)}>
-            <div className="safe-summary">
-              <div className="safe-icon">🔒</div>
-              <div className="safe-details">
-                <div className="safe-name">{safe.name}</div>
-                <div className="safe-meta">Modified {formatDate(safe.lastModified)}</div>
-              </div>
-            </div>
+        {safes.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-box"></div>
+            <div className="empty-message">No safes found</div>
           </div>
-        ))}
+        ) : (
+          safes.map((safe) => (
+            <ItemRow
+              key={safe.path}
+              icon="🔒"
+              name={safe.name}
+              metadata={`Modified ${formatDate(safe.lastModified)}`}
+              sourceBadge={safe.source === "onedrive" ? "OneDrive" : undefined}
+              onClick={() => handleSafeClick(safe.path)}
+            />
+          ))
+        )}
+      </div>
+
+      <div className="add-banner" onClick={() => navigate("/add")}>
+        <div className="add-banner-content">
+          <span className="add-banner-icon">＋</span>
+          <span className="add-banner-text">Add Safes</span>
+        </div>
       </div>
     </div>
   );

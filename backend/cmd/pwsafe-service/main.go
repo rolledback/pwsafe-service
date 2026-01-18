@@ -28,6 +28,9 @@ func main() {
 	safeService := service.NewSafeService(cfg.SafesDirectory)
 	safeHandler := handlers.NewSafeHandler(safeService)
 
+	onedriveService := service.NewOneDriveService(cfg.SafesDirectory, cfg.OneDriveClientID, cfg.OneDriveRedirectURI)
+	onedriveHandler := handlers.NewOneDriveHandler(onedriveService)
+
 	rateLimiter := middleware.NewRateLimiter(rate.Limit(5), 5)
 
 	http.HandleFunc("/api/safes", middleware.CORS(rateLimiter.Limit(safeHandler.ListSafes)))
@@ -40,6 +43,14 @@ func main() {
 			http.NotFound(w, r)
 		}
 	})))
+
+	// OneDrive routes
+	http.HandleFunc("/api/onedrive/status", middleware.CORS(rateLimiter.Limit(onedriveHandler.GetStatus)))
+	http.HandleFunc("/api/onedrive/auth/url", middleware.CORS(rateLimiter.Limit(onedriveHandler.GetAuthURL)))
+	http.HandleFunc("/api/onedrive/auth/callback", onedriveHandler.HandleCallback)
+	http.HandleFunc("/api/onedrive/disconnect", middleware.CORS(rateLimiter.Limit(onedriveHandler.Disconnect)))
+	http.HandleFunc("/api/onedrive/files", middleware.CORS(rateLimiter.Limit(onedriveHandler.HandleFiles)))
+	http.HandleFunc("/api/onedrive/sync", middleware.CORS(rateLimiter.Limit(onedriveHandler.Sync)))
 
 	// Serve static files with SPA fallback
 	http.HandleFunc("/web/", func(w http.ResponseWriter, r *http.Request) {

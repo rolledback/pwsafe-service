@@ -5,7 +5,7 @@ import { api, SafeStructure, Group, Entry } from "../api/client";
 type LocationState = {
   structure: SafeStructure;
   password: string;
-  safeName: string;
+  safePath: string;
 };
 
 type TreeItemProps = {
@@ -54,25 +54,32 @@ function TreeItem({ level, isGroup, isExpanded, name, icon, entry, onCopyPasswor
 }
 
 function TreeView() {
-  const { safeName } = useParams<{ safeName: string }>();
+  const { safePath: encodedSafePath } = useParams<{ safePath: string }>();
   const navigate = useNavigate();
   const location = useLocation();
   const [structure, setStructure] = useState<SafeStructure | null>(null);
   const [password, setPassword] = useState<string | null>(null);
+  const [safePath, setSafePath] = useState<string | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
+
+  // Decode the URL-encoded path
+  const decodedSafePath = encodedSafePath ? decodeURIComponent(encodedSafePath) : "";
+  // Extract display name from path
+  const displayName = decodedSafePath.split("/").pop() || decodedSafePath;
 
   useEffect(() => {
     const state = location.state as LocationState | null;
 
-    if (!state || !state.structure || !state.password || state.safeName !== safeName) {
+    if (!state || !state.structure || !state.password || state.safePath !== decodedSafePath) {
       navigate("/");
       return;
     }
 
     setStructure(state.structure);
     setPassword(state.password);
-  }, [safeName, navigate, location.state]);
+    setSafePath(state.safePath);
+  }, [decodedSafePath, navigate, location.state]);
 
   const getGroupPath = (groupName: string, parentPath: string = ""): string => {
     return parentPath ? `${parentPath}.${groupName}` : groupName;
@@ -91,14 +98,14 @@ function TreeView() {
   };
 
   const handleCopyPassword = async (entry: Entry) => {
-    if (!password || !safeName) {
+    if (!password || !safePath) {
       setCopyMessage("Error: Session expired");
       setTimeout(() => setCopyMessage(null), 3000);
       return;
     }
 
     try {
-      const entryPassword = await api.getEntryPassword(safeName, password, entry.uuid);
+      const entryPassword = await api.getEntryPassword(safePath, password, entry.uuid);
       await navigator.clipboard.writeText(entryPassword);
       setCopyMessage(`Copied password for ${entry.title}`);
       setTimeout(() => setCopyMessage(null), 3000);
@@ -182,7 +189,7 @@ function TreeView() {
         <div className="header">
           <div className="safe-header-content">
             <div className="safe-icon">🔒</div>
-            <div className="safe-name">{safeName}</div>
+            <div className="safe-name">{displayName}</div>
           </div>
           <button className="close-button" onClick={() => navigate("/")}>
             ✕
