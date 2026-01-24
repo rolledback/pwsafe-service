@@ -36,6 +36,7 @@ export type OneDriveStatus = {
   accountName?: string;
   accountEmail?: string;
   lastSyncTime?: string;
+  nextSyncAt?: string;
 };
 
 export type OneDriveAuthURL = {

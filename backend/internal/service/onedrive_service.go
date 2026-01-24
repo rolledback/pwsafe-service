@@ -1,28 +1,33 @@
 package service
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rolledback/pwsafe-service/backend/internal/models"
 )
 
 const (
-	msAuthority    = "https://login.microsoftonline.com/consumers"
-	msAuthorizeURL = msAuthority + "/oauth2/v2.0/authorize"
-	msTokenURL     = msAuthority + "/oauth2/v2.0/token"
-	msGraphURL     = "https://graph.microsoft.com/v1.0"
-	onedriveScopes = "Files.Read User.Read offline_access"
+	msAuthority        = "https://login.microsoftonline.com/consumers"
+	msAuthorizeURL     = msAuthority + "/oauth2/v2.0/authorize"
+	msTokenURL         = msAuthority + "/oauth2/v2.0/token"
+	msGraphURL         = "https://graph.microsoft.com/v1.0"
+	onedriveScopes     = "Files.Read User.Read offline_access"
+	syncInterval       = 15 * time.Minute
+	codeVerifierMaxAge = 15 * time.Minute
 )
 
 type OneDriveService struct {
@@ -30,13 +35,71 @@ type OneDriveService struct {
 	clientID       string
 	redirectURI    string
 	codeVerifier   string
+	tokenMutex     sync.Mutex
+	syncMutex      sync.RWMutex
+	ctx            context.Context
+	cancel         context.CancelFunc
+	nextTickAt     time.Time
+	nextTickMutex  sync.Mutex
 }
 
-func NewOneDriveService(safesDirectory, clientID, redirectURI string) *OneDriveService {
-	return &OneDriveService{
+func NewOneDriveService(ctx context.Context, safesDirectory, clientID, redirectURI string) *OneDriveService {
+	ctx, cancel := context.WithCancel(ctx)
+	s := &OneDriveService{
 		safesDirectory: safesDirectory,
 		clientID:       clientID,
 		redirectURI:    redirectURI,
+		ctx:            ctx,
+		cancel:         cancel,
+		nextTickAt:     time.Now().Add(syncInterval),
+	}
+	// Clean up any stale code verifier from previous runs
+	if _, err := s.loadCodeVerifier(); err != nil && err.Error() == "code verifier expired" {
+		log.Printf("OneDrive: cleaned up stale code verifier")
+	}
+	go s.periodicSync()
+	return s
+}
+
+// Stop stops the background sync goroutine
+func (s *OneDriveService) Stop() {
+	s.cancel()
+}
+
+func (s *OneDriveService) periodicSync() {
+	ticker := time.NewTicker(syncInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.ctx.Done():
+			log.Printf("OneDrive: periodic sync stopped")
+			return
+		case <-ticker.C:
+			s.tryPeriodicSync()
+
+			// Update next tick time after sync completes
+			s.nextTickMutex.Lock()
+			s.nextTickAt = time.Now().Add(syncInterval)
+			s.nextTickMutex.Unlock()
+		}
+	}
+}
+
+func (s *OneDriveService) tryPeriodicSync() {
+	// Check if we're connected (have valid/refreshable token)
+	_, err := s.getValidAccessToken()
+	if err != nil {
+		log.Printf("OneDrive: skipping periodic sync (not connected)")
+		return
+	}
+
+	log.Printf("OneDrive: starting periodic sync")
+	_, err = s.Sync()
+	if err != nil {
+		log.Printf("OneDrive: periodic sync failed: %v", err)
+	} else {
+		log.Printf("OneDrive: periodic sync completed")
 	}
 }
 
@@ -45,6 +108,10 @@ func (s *OneDriveService) tokensFilePath() string {
 }
 
 func (s *OneDriveService) GetStatus() (*models.OneDriveStatus, error) {
+	// Wait for any in-progress sync to complete (read lock waits for write lock to release)
+	s.syncMutex.RLock()
+	defer s.syncMutex.RUnlock()
+
 	status := &models.OneDriveStatus{
 		Connected:   false,
 		NeedsReauth: false,
@@ -77,9 +144,9 @@ func (s *OneDriveService) GetStatus() (*models.OneDriveStatus, error) {
 	}
 
 	if time.Now().After(expiresAt) {
-		// Token expired, but we have refresh token, so still connected but may need refresh
+		// Token expired, but we have refresh token - auto-refresh will handle it
+		// NeedsReauth stays false since we can refresh
 		status.Connected = true
-		status.NeedsReauth = true
 	} else {
 		status.Connected = true
 	}
@@ -87,11 +154,16 @@ func (s *OneDriveService) GetStatus() (*models.OneDriveStatus, error) {
 	status.AccountName = tokens.AccountName
 	status.AccountEmail = tokens.AccountEmail
 
-	// Load lastSyncTime from config
+	// Load lastSyncTime from config and calculate nextSyncAt
 	config, err := s.loadConfig()
 	if err == nil && config.LastSyncTime != "" {
 		status.LastSyncTime = config.LastSyncTime
 	}
+
+	// Get next tick time from the actual ticker
+	s.nextTickMutex.Lock()
+	status.NextSyncAt = s.nextTickAt.Format(time.RFC3339)
+	s.nextTickMutex.Unlock()
 
 	return status, nil
 }
@@ -278,6 +350,18 @@ func (s *OneDriveService) storeCodeVerifier(verifier string) error {
 
 func (s *OneDriveService) loadCodeVerifier() (string, error) {
 	verifierPath := filepath.Join(s.safesDirectory, "onedrive", ".code_verifier")
+
+	// Check file age before reading
+	stat, err := os.Stat(verifierPath)
+	if err != nil {
+		return "", err
+	}
+
+	if time.Since(stat.ModTime()) > codeVerifierMaxAge {
+		os.Remove(verifierPath)
+		return "", fmt.Errorf("code verifier expired")
+	}
+
 	data, err := os.ReadFile(verifierPath)
 	if err != nil {
 		return "", err
@@ -356,7 +440,80 @@ func (s *OneDriveService) saveConfig(config *models.OneDriveConfig) error {
 	return nil
 }
 
+// refreshAccessTokenLocked refreshes the access token. Must be called while holding tokenMutex.
+func (s *OneDriveService) refreshAccessTokenLocked(refreshToken, accountName, accountEmail string) (*models.OneDriveTokens, error) {
+	log.Printf("OneDrive: refreshing access token...")
+
+	if refreshToken == "" {
+		return nil, fmt.Errorf("no refresh token available")
+	}
+
+	// Request new tokens using refresh token
+	formData := url.Values{
+		"client_id":     {s.clientID},
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refreshToken},
+		"scope":         {onedriveScopes},
+	}
+
+	resp, err := http.PostForm(msTokenURL, formData)
+	if err != nil {
+		return nil, fmt.Errorf("refresh request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read refresh response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		// Check for invalid_grant error (refresh token is dead)
+		if strings.Contains(string(body), "invalid_grant") {
+			return nil, fmt.Errorf("REAUTH_REQUIRED: refresh token is invalid")
+		}
+		return nil, fmt.Errorf("refresh failed: %s", string(body))
+	}
+
+	var tokenResp struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresIn    int    `json:"expires_in"`
+	}
+
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return nil, fmt.Errorf("failed to parse refresh response: %w", err)
+	}
+
+	expiresAt := time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
+
+	// Microsoft may or may not return a new refresh token
+	newRefreshToken := tokenResp.RefreshToken
+	if newRefreshToken == "" {
+		newRefreshToken = refreshToken
+	}
+
+	newTokens := &models.OneDriveTokens{
+		AccessToken:  tokenResp.AccessToken,
+		RefreshToken: newRefreshToken,
+		ExpiresAt:    expiresAt.Format(time.RFC3339),
+		AccountName:  accountName,
+		AccountEmail: accountEmail,
+	}
+
+	// Store updated tokens
+	if err := s.storeTokens(newTokens); err != nil {
+		return nil, fmt.Errorf("failed to store refreshed tokens: %w", err)
+	}
+
+	log.Printf("OneDrive: access token refreshed successfully")
+	return newTokens, nil
+}
+
 func (s *OneDriveService) getValidAccessToken() (string, error) {
+	s.tokenMutex.Lock()
+	defer s.tokenMutex.Unlock()
+
 	tokensPath := s.tokensFilePath()
 	data, err := os.ReadFile(tokensPath)
 	if err != nil {
@@ -377,11 +534,22 @@ func (s *OneDriveService) getValidAccessToken() (string, error) {
 		return "", fmt.Errorf("invalid expiry time")
 	}
 
-	if time.Now().After(expiresAt) {
-		return "", fmt.Errorf("token expired")
+	// If token is still valid, return it
+	if time.Now().Before(expiresAt) {
+		return tokens.AccessToken, nil
 	}
 
-	return tokens.AccessToken, nil
+	// Token expired - try to refresh
+	if tokens.RefreshToken == "" {
+		return "", fmt.Errorf("REAUTH_REQUIRED: token expired and no refresh token")
+	}
+
+	newTokens, err := s.refreshAccessTokenLocked(tokens.RefreshToken, tokens.AccountName, tokens.AccountEmail)
+	if err != nil {
+		return "", err
+	}
+
+	return newTokens.AccessToken, nil
 }
 
 func (s *OneDriveService) searchOneDriveFiles(accessToken string) ([]models.OneDriveFile, error) {
@@ -539,6 +707,9 @@ func (s *OneDriveService) cleanupAllSafeFiles(onedriveDir string) error {
 }
 
 func (s *OneDriveService) Sync() (*models.OneDriveSyncResponse, error) {
+	s.syncMutex.Lock()
+	defer s.syncMutex.Unlock()
+
 	config, err := s.loadConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)

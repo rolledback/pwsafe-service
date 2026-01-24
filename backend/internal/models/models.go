@@ -53,6 +53,7 @@ type OneDriveStatus struct {
 	AccountName  string `json:"accountName,omitempty"`
 	AccountEmail string `json:"accountEmail,omitempty"`
 	LastSyncTime string `json:"lastSyncTime,omitempty"`
+	NextSyncAt   string `json:"nextSyncAt,omitempty"`
 }
 
 type OneDriveAuthURL struct {

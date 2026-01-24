@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, OneDriveStatus, OneDriveFile } from "../api/client";
 
@@ -28,6 +28,16 @@ function OneDrive() {
   const [connecting, setConnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [, setTick] = useState(0); // Force re-render for time display
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingFilesRef = useRef<OneDriveFile[] | null>(null);
+  const nextSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Update time display every 20 seconds
+  useEffect(() => {
+    const interval = setInterval(() => setTick((t) => t + 1), 20000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const errorParam = searchParams.get("error");
@@ -42,7 +52,37 @@ function OneDrive() {
     }
 
     fetchStatus();
+
+    // Cleanup timers on unmount
+    return () => {
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+      }
+      if (nextSyncTimeoutRef.current) {
+        clearTimeout(nextSyncTimeoutRef.current);
+      }
+    };
   }, [searchParams]);
+
+  const scheduleNextFetch = (nextSyncAt: string) => {
+    // Clear any existing scheduled fetch
+    if (nextSyncTimeoutRef.current) {
+      clearTimeout(nextSyncTimeoutRef.current);
+    }
+
+    const nextSyncTime = new Date(nextSyncAt).getTime();
+    const now = Date.now();
+    const delay = nextSyncTime - now + 1000; // Add 1s buffer
+
+    // Only schedule if nextSyncAt is in the future (at least 5s away)
+    if (delay < 5000) {
+      return;
+    }
+
+    nextSyncTimeoutRef.current = setTimeout(() => {
+      fetchStatus();
+    }, delay);
+  };
 
   const fetchStatus = async () => {
     try {
@@ -50,6 +90,10 @@ function OneDrive() {
       setStatus(result);
       if (result.connected) {
         fetchFiles();
+        // Schedule next fetch based on nextSyncAt
+        if (result.nextSyncAt) {
+          scheduleNextFetch(result.nextSyncAt);
+        }
       }
     } catch (err) {
       console.error("Failed to fetch OneDrive status:", err);
@@ -72,16 +116,39 @@ function OneDrive() {
   };
 
   const handleToggleFile = async (fileId: string) => {
+    if (syncing) return; // Disable toggles while syncing
+
     const updatedFiles = files.map((f) => (f.id === fileId ? { ...f, selected: !f.selected } : f));
     setFiles(updatedFiles);
+    pendingFilesRef.current = updatedFiles;
 
-    try {
-      await api.saveOneDriveFiles(updatedFiles);
-    } catch (err) {
-      console.error("Failed to save file selection:", err);
-      // Revert on error
-      setFiles(files);
+    // Clear any existing debounce timer
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
     }
+
+    // Debounce: wait 500ms before saving and syncing
+    syncTimeoutRef.current = setTimeout(async () => {
+      const filesToSave = pendingFilesRef.current;
+      if (!filesToSave) return;
+
+      setSyncing(true);
+      setError(null);
+      try {
+        await api.saveOneDriveFiles(filesToSave);
+        await api.syncOneDrive();
+        await fetchFiles();
+        await fetchStatus();
+      } catch (err) {
+        console.error("Failed to save/sync file selection:", err);
+        setError("Failed to sync files. Please try again.");
+        // Revert on error
+        setFiles(files);
+      } finally {
+        setSyncing(false);
+        pendingFilesRef.current = null;
+      }
+    }, 500);
   };
 
   const handleRefresh = async () => {

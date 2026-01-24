@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -25,10 +26,14 @@ func main() {
 		staticDir = "./static"
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	safeService := service.NewSafeService(cfg.SafesDirectory)
 	safeHandler := handlers.NewSafeHandler(safeService)
 
-	onedriveService := service.NewOneDriveService(cfg.SafesDirectory, cfg.OneDriveClientID, cfg.OneDriveRedirectURI)
+	onedriveService := service.NewOneDriveService(ctx, cfg.SafesDirectory, cfg.OneDriveClientID, cfg.OneDriveRedirectURI)
+	defer onedriveService.Stop()
 	onedriveHandler := handlers.NewOneDriveHandler(onedriveService)
 
 	rateLimiter := middleware.NewRateLimiter(rate.Limit(5), 5)
