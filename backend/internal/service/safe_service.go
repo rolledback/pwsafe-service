@@ -30,13 +30,25 @@ func (s *SafeService) ListSafes() ([]models.SafeFile, error) {
 	}
 	safes = append(safes, rootSafes...)
 
-	// Scan onedrive subdirectory (synced safes) - recursive to preserve OneDrive path structure
-	onedriveDir := filepath.Join(s.safesDirectory, "onedrive")
-	onedriveSafes, err := s.scanDirectory(onedriveDir, "onedrive", true)
-	if err == nil {
-		safes = append(safes, onedriveSafes...)
+	// Scan all subdirectories as potential provider directories
+	// Each subdirectory is treated as a provider (e.g., "onedrive", "gdrive")
+	entries, err := os.ReadDir(s.safesDirectory)
+	if err != nil {
+		return safes, nil // Return what we have if we can't read subdirs
 	}
-	// Ignore error if onedrive directory doesn't exist
+
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+
+		providerID := entry.Name()
+		providerDir := filepath.Join(s.safesDirectory, providerID)
+		providerSafes, err := s.scanDirectory(providerDir, providerID, true)
+		if err == nil {
+			safes = append(safes, providerSafes...)
+		}
+	}
 
 	return safes, nil
 }

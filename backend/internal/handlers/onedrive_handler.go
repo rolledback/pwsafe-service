@@ -9,13 +9,16 @@ import (
 	"github.com/rolledback/pwsafe-service/backend/internal/service"
 )
 
+// OneDriveHandler handles HTTP requests for the OneDrive provider
+// using the new SyncableSafesService architecture
 type OneDriveHandler struct {
-	onedriveService *service.OneDriveService
+	syncService *service.SyncableSafesService
 }
 
-func NewOneDriveHandler(onedriveService *service.OneDriveService) *OneDriveHandler {
+// NewOneDriveHandler creates a new OneDrive handler
+func NewOneDriveHandler(syncService *service.SyncableSafesService) *OneDriveHandler {
 	return &OneDriveHandler{
-		onedriveService: onedriveService,
+		syncService: syncService,
 	}
 }
 
@@ -27,7 +30,7 @@ func (h *OneDriveHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	status, err := h.onedriveService.GetStatus()
+	status, err := h.syncService.GetProviderStatus(r.Context())
 	if err != nil {
 		log.Printf("Error getting OneDrive status: %v", err)
 		h.respondError(w, "Failed to get OneDrive status", http.StatusInternalServerError)
@@ -45,14 +48,14 @@ func (h *OneDriveHandler) GetAuthURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	authURL, err := h.onedriveService.GetAuthURL()
+	authURL, err := h.syncService.Provider().GetAuthURL(r.Context())
 	if err != nil {
 		log.Printf("Error getting OneDrive auth URL: %v", err)
-		h.respondError(w, err.Error(), http.StatusInternalServerError)
+		h.respondError(w, "Failed to get auth URL", http.StatusInternalServerError)
 		return
 	}
 
-	h.respondJSON(w, authURL, http.StatusOK)
+	h.respondJSON(w, map[string]string{"url": authURL}, http.StatusOK)
 }
 
 func (h *OneDriveHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
@@ -73,23 +76,13 @@ func (h *OneDriveHandler) HandleCallback(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.onedriveService.HandleCallback(code); err != nil {
+	if err := h.syncService.Provider().HandleCallback(r.Context(), code); err != nil {
 		log.Printf("Error handling OneDrive callback: %v", err)
 		http.Redirect(w, r, "/web/add/onedrive?error=token_exchange_failed", http.StatusFound)
 		return
 	}
 
 	http.Redirect(w, r, "/web/add/onedrive", http.StatusFound)
-}
-
-func (h *OneDriveHandler) respondJSON(w http.ResponseWriter, data interface{}, status int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
-}
-
-func (h *OneDriveHandler) respondError(w http.ResponseWriter, message string, status int) {
-	h.respondJSON(w, models.ErrorResponse{Error: message}, status)
 }
 
 func (h *OneDriveHandler) Disconnect(w http.ResponseWriter, r *http.Request) {
@@ -100,7 +93,7 @@ func (h *OneDriveHandler) Disconnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.onedriveService.Disconnect(); err != nil {
+	if err := h.syncService.Disconnect(r.Context()); err != nil {
 		log.Printf("Error disconnecting OneDrive: %v", err)
 		h.respondError(w, "Failed to disconnect OneDrive", http.StatusInternalServerError)
 		return
@@ -112,37 +105,39 @@ func (h *OneDriveHandler) Disconnect(w http.ResponseWriter, r *http.Request) {
 func (h *OneDriveHandler) HandleFiles(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		h.getFiles(w, r)
+		h.listFiles(w, r)
 	case http.MethodPut:
-		h.putFiles(w, r)
+		h.saveFiles(w, r)
 	default:
 		h.respondError(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func (h *OneDriveHandler) getFiles(w http.ResponseWriter, r *http.Request) {
+func (h *OneDriveHandler) listFiles(w http.ResponseWriter, r *http.Request) {
 	log.Printf("GET /api/onedrive/files")
 
-	files, err := h.onedriveService.ListFiles()
+	files, err := h.syncService.ListFiles(r.Context())
 	if err != nil {
 		log.Printf("Error listing OneDrive files: %v", err)
 		h.respondError(w, "Failed to list files", http.StatusInternalServerError)
 		return
 	}
 
-	h.respondJSON(w, files, http.StatusOK)
+	h.respondJSON(w, map[string]interface{}{"files": files}, http.StatusOK)
 }
 
-func (h *OneDriveHandler) putFiles(w http.ResponseWriter, r *http.Request) {
+func (h *OneDriveHandler) saveFiles(w http.ResponseWriter, r *http.Request) {
 	log.Printf("PUT /api/onedrive/files")
 
-	var req models.OneDriveFilesRequest
+	var req struct {
+		Files []service.SelectedFile `json:"files"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.respondError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	if err := h.onedriveService.SaveFiles(req.Files); err != nil {
+	if err := h.syncService.SaveFiles(req.Files); err != nil {
 		log.Printf("Error saving OneDrive files: %v", err)
 		h.respondError(w, "Failed to save files", http.StatusInternalServerError)
 		return
@@ -159,12 +154,22 @@ func (h *OneDriveHandler) Sync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.onedriveService.Sync()
+	results, err := h.syncService.Sync(r.Context())
 	if err != nil {
 		log.Printf("Error syncing OneDrive files: %v", err)
 		h.respondError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	h.respondJSON(w, result, http.StatusOK)
+	h.respondJSON(w, map[string]interface{}{"results": results}, http.StatusOK)
+}
+
+func (h *OneDriveHandler) respondJSON(w http.ResponseWriter, data interface{}, status int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(data)
+}
+
+func (h *OneDriveHandler) respondError(w http.ResponseWriter, message string, status int) {
+	h.respondJSON(w, models.ErrorResponse{Error: message}, status)
 }

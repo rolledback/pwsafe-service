@@ -10,6 +10,7 @@ import (
 	"github.com/rolledback/pwsafe-service/backend/internal/config"
 	"github.com/rolledback/pwsafe-service/backend/internal/handlers"
 	"github.com/rolledback/pwsafe-service/backend/internal/middleware"
+	"github.com/rolledback/pwsafe-service/backend/internal/provider/onedrive"
 	"github.com/rolledback/pwsafe-service/backend/internal/service"
 	"golang.org/x/time/rate"
 )
@@ -32,9 +33,11 @@ func main() {
 	safeService := service.NewSafeService(cfg.SafesDirectory)
 	safeHandler := handlers.NewSafeHandler(safeService)
 
-	onedriveService := service.NewOneDriveService(ctx, cfg.SafesDirectory, cfg.OneDriveClientID, cfg.OneDriveRedirectURI)
-	defer onedriveService.Stop()
-	onedriveHandler := handlers.NewOneDriveHandler(onedriveService)
+	// Create OneDrive provider and sync service (new architecture)
+	onedriveProvider := onedrive.NewOneDriveProvider(cfg.SafesDirectory, cfg.OneDriveClientID, cfg.OneDriveRedirectURI)
+	onedriveSyncService := service.NewSyncableSafesService(ctx, cfg.SafesDirectory, onedriveProvider)
+	defer onedriveSyncService.Stop()
+	onedriveHandler := handlers.NewOneDriveHandler(onedriveSyncService)
 
 	rateLimiter := middleware.NewRateLimiter(rate.Limit(5), 5)
 
