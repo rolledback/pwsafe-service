@@ -5,11 +5,9 @@ import (
 )
 
 type Config struct {
-	SafesDirectory      string
-	ServerPort          string
-	ServerHost          string
-	OneDriveClientID    string
-	OneDriveRedirectURI string
+	SafesDirectory string
+	ServerPort     string
+	ServerHost     string
 }
 
 func Load() *Config {
@@ -28,18 +26,9 @@ func Load() *Config {
 		serverHost = "localhost"
 	}
 
-	oneDriveClientID := os.Getenv("ONEDRIVE_CLIENT_ID")
-
-	oneDriveRedirectURI := os.Getenv("ONEDRIVE_REDIRECT_URI")
-	if oneDriveRedirectURI == "" {
-		oneDriveRedirectURI = "http://localhost:8080/api/onedrive/auth/callback"
-	}
-
 	return &Config{
-		SafesDirectory:      safesDir,
-		ServerPort:         serverPort,
-		ServerHost:         serverHost,
-		OneDriveClientID:    oneDriveClientID,
-		OneDriveRedirectURI: oneDriveRedirectURI,
+		SafesDirectory: safesDir,
+		ServerPort:     serverPort,
+		ServerHost:     serverHost,
 	}
 }

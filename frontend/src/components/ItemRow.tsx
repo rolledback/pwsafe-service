@@ -1,12 +1,15 @@
+import { ReactNode } from "react";
+
 export type ItemRowProps = {
-  icon: string;
+  icon: ReactNode;
   name: string;
   metadata?: string;
   sourceBadge?: string;
+  sourceBadgeColor?: string;
   onClick?: () => void;
 };
 
-function ItemRow({ icon, name, metadata, sourceBadge, onClick }: ItemRowProps) {
+function ItemRow({ icon, name, metadata, sourceBadge, sourceBadgeColor, onClick }: ItemRowProps) {
   return (
     <div className="item-row" onClick={onClick}>
       <div className="item-summary">
@@ -16,7 +19,12 @@ function ItemRow({ icon, name, metadata, sourceBadge, onClick }: ItemRowProps) {
           {(metadata || sourceBadge) && (
             <div className="item-meta">
               {metadata}
-              {sourceBadge && <span className="safe-source"> ({sourceBadge})</span>}
+              {sourceBadge && (
+                <span className="safe-source" style={sourceBadgeColor ? { color: sourceBadgeColor } : undefined}>
+                  {" "}
+                  ({sourceBadge})
+                </span>
+              )}
             </div>
           )}
         </div>

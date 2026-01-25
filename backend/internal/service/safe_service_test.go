@@ -24,8 +24,8 @@ func TestListSafes(t *testing.T) {
 	for _, safe := range safes {
 		if safe.Name == "simple.psafe3" {
 			foundSimple = true
-			if safe.Source != "static" {
-				t.Errorf("Expected source 'static' for simple.psafe3, got '%s'", safe.Source)
+			if safe.Provider != "static" {
+				t.Errorf("Expected source 'static' for simple.psafe3, got '%s'", safe.Provider)
 			}
 			if safe.Path != "/testdata/simple.psafe3" {
 				t.Errorf("Expected path '/testdata/simple.psafe3', got '%s'", safe.Path)
@@ -33,8 +33,8 @@ func TestListSafes(t *testing.T) {
 		}
 		if safe.Name == "three.psafe3" {
 			foundThree = true
-			if safe.Source != "static" {
-				t.Errorf("Expected source 'static' for three.psafe3, got '%s'", safe.Source)
+			if safe.Provider != "static" {
+				t.Errorf("Expected source 'static' for three.psafe3, got '%s'", safe.Provider)
 			}
 		}
 	}
@@ -223,8 +223,8 @@ func TestListSafes_OnlyPsafe3Files(t *testing.T) {
 		t.Errorf("Expected 'test.psafe3', got '%s'", safes[0].Name)
 	}
 
-	if safes[0].Source != "static" {
-		t.Errorf("Expected source 'static', got '%s'", safes[0].Source)
+	if safes[0].Provider != "static" {
+		t.Errorf("Expected source 'static', got '%s'", safes[0].Provider)
 	}
 }
 
@@ -264,14 +264,14 @@ func TestListSafes_WithOnedriveSubdir(t *testing.T) {
 	for _, safe := range safes {
 		if safe.Name == "static.psafe3" {
 			foundStatic = true
-			if safe.Source != "static" {
-				t.Errorf("Expected source 'static', got '%s'", safe.Source)
+			if safe.Provider != "static" {
+				t.Errorf("Expected source 'static', got '%s'", safe.Provider)
 			}
 		}
 		if safe.Name == "synced.psafe3" {
 			foundSynced = true
-			if safe.Source != "onedrive" {
-				t.Errorf("Expected source 'onedrive', got '%s'", safe.Source)
+			if safe.Provider != "onedrive" {
+				t.Errorf("Expected source 'onedrive', got '%s'", safe.Provider)
 			}
 			expectedPath := "/" + baseName + "/onedrive/synced.psafe3"
 			if safe.Path != expectedPath {
@@ -280,8 +280,8 @@ func TestListSafes_WithOnedriveSubdir(t *testing.T) {
 		}
 		if safe.Name == "work.psafe3" {
 			foundWork = true
-			if safe.Source != "onedrive" {
-				t.Errorf("Expected source 'onedrive', got '%s'", safe.Source)
+			if safe.Provider != "onedrive" {
+				t.Errorf("Expected source 'onedrive', got '%s'", safe.Provider)
 			}
 			expectedPath := "/" + baseName + "/onedrive/Documents/Passwords/work.psafe3"
 			if safe.Path != expectedPath {

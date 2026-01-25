@@ -27,7 +27,18 @@ const (
 	msGraphURL         = "https://graph.microsoft.com/v1.0"
 	onedriveScopes     = "Files.Read User.Read offline_access"
 	codeVerifierMaxAge = 15 * time.Minute
+
+	// OneDrive brand color (Microsoft blue)
+	onedriveBrandColor = "#0078D4"
+
+	// OneDrive icon as base64-encoded SVG data URL
+	onedriveIcon = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgNS41IDMyIDIwLjUiPjx0aXRsZT5PZmZpY2VDb3JlMTBfMzJ4XzI0eF8yMHhfMTZ4XzAxLTIyLTIwMTk8L3RpdGxlPjxnIGlkPSJTVFlMRV9DT0xPUiI+PHBhdGggZD0iTTEyLjIwMjQ1LDExLjE5MjkybC4wMDAzMS0uMDAxMSw2LjcxNzY1LDQuMDIzNzksNC4wMDI5My0xLjY4NDUxLjAwMDE4LjAwMDY4QTYuNDc2OCw2LjQ3NjgsMCwwLDEsMjUuNSwxM2MuMTQ3NjQsMCwuMjkzNTguMDA2Ny40Mzg3OC4wMTYzOWExMC4wMDA3NSwxMC4wMDA3NSwwLDAsMC0xOC4wNDEtMy4wMTM4MUM3LjkzMiwxMC4wMDIxNSw3Ljk2NTcsMTAsOCwxMEE3Ljk2MDczLDcuOTYwNzMsMCwwLDEsMTIuMjAyNDUsMTEuMTkyOTJaIiBmaWxsPSIjMDM2NGI4Ii8+PHBhdGggZD0iTTEyLjIwMjc2LDExLjE5MTgybC0uMDAwMzEuMDAxMUE3Ljk2MDczLDcuOTYwNzMsMCwwLDAsOCwxMGMtLjAzNDMsMC0uMDY4MDUuMDAyMTUtLjEwMjIzLjAwMjU4QTcuOTk2NzYsNy45OTY3NiwwLDAsMCwxLjQzNzMyLDIyLjU3Mjc3bDUuOTI0LTIuNDkyOTIsMi42MzM0Mi0xLjEwODE5LDUuODYzNTMtMi40Njc0NiwzLjA2MjEzLTEuMjg4NTlaIiBmaWxsPSIjMDA3OGQ0Ii8+PHBhdGggZD0iTTI1LjkzODc4LDEzLjAxNjM5QzI1Ljc5MzU4LDEzLjAwNjcsMjUuNjQ3NjQsMTMsMjUuNSwxM2E2LjQ3NjgsNi40NzY4LDAsMCwwLTIuNTc2NDguNTMxNzhsLS4wMDAxOC0uMDAwNjgtNC4wMDI5MywxLjY4NDUxLDEuMTYwNzcuNjk1MjhMMjMuODg2MTEsMTguMTlsMS42NjAwOS45OTQzOCw1LjY3NjMzLDMuNDAwMDdhNi41MDAyLDYuNTAwMiwwLDAsMC01LjI4Mzc1LTkuNTY4MDVaIiBmaWxsPSIjMTQ5MGRmIi8+PHBhdGggZD0iTTI1LjU0NjIsMTkuMTg0MzcsMjMuODg2MTEsMTguMTlsLTMuODA0OTMtMi4yNzkxLTEuMTYwNzctLjY5NTI4TDE1Ljg1ODI4LDE2LjUwNDIsOS45OTQ3NSwxOC45NzE2Niw3LjM2MTMzLDIwLjA3OTg1bC01LjkyNCwyLjQ5MjkyQTcuOTg4ODksNy45ODg4OSwwLDAsMCw4LDI2SDI1LjVhNi40OTgzNyw2LjQ5ODM3LDAsMCwwLDUuNzIyNTMtMy40MTU1NloiIGZpbGw9IiMyOGE4ZWEiLz48L2c+PC9zdmc+"
 )
+
+// Settings represents the OneDrive provider settings from settings.json
+type Settings struct {
+	ClientID string `json:"clientId"`
+}
 
 // tokens is the internal struct for storing OAuth tokens
 type tokens struct {
@@ -40,16 +51,33 @@ type tokens struct {
 
 // OneDriveProvider implements provider.SyncableSafesProvider
 type OneDriveProvider struct {
-	storageDir  string // Where to store tokens (e.g., {safesDir}/onedrive)
+	storageDir  string // The provider's directory (e.g., {safesDir}/onedrive)
 	clientID    string
 	redirectURI string
 	tokenMutex  sync.Mutex
 }
 
+// Factory creates an OneDriveProvider from settings.json content
+func Factory(providerDir string, baseURL string, settingsJSON []byte) (provider.SyncableSafesProvider, error) {
+	var settings Settings
+	if err := json.Unmarshal(settingsJSON, &settings); err != nil {
+		return nil, fmt.Errorf("invalid settings.json: %w", err)
+	}
+	if settings.ClientID == "" {
+		return nil, fmt.Errorf("clientId is required in settings.json")
+	}
+
+	// Callback URL derived from baseURL + fixed path
+	redirectURI := strings.TrimSuffix(baseURL, "/") + "/api/providers/onedrive/auth/callback"
+
+	return NewOneDriveProvider(providerDir, settings.ClientID, redirectURI), nil
+}
+
 // NewOneDriveProvider creates a new OneDrive provider
-func NewOneDriveProvider(safesDirectory, clientID, redirectURI string) *OneDriveProvider {
+// storageDir is the provider's directory where tokens and data are stored
+func NewOneDriveProvider(storageDir, clientID, redirectURI string) *OneDriveProvider {
 	p := &OneDriveProvider{
-		storageDir:  filepath.Join(safesDirectory, "onedrive"),
+		storageDir:  storageDir,
 		clientID:    clientID,
 		redirectURI: redirectURI,
 	}
@@ -68,11 +96,21 @@ func (p *OneDriveProvider) DisplayName() string {
 	return "OneDrive"
 }
 
+// ============ METADATA (2 methods) ============
+
+func (p *OneDriveProvider) Icon() string {
+	return onedriveIcon
+}
+
+func (p *OneDriveProvider) BrandColor() string {
+	return onedriveBrandColor
+}
+
 // ============ AUTH (4 methods) ============
 
 func (p *OneDriveProvider) GetAuthURL(ctx context.Context) (string, error) {
 	if p.clientID == "" {
-		return "", fmt.Errorf("ONEDRIVE_CLIENT_ID not configured")
+		return "", fmt.Errorf("OneDrive client ID not configured")
 	}
 
 	// Generate PKCE code verifier and challenge
@@ -103,7 +141,7 @@ func (p *OneDriveProvider) GetAuthURL(ctx context.Context) (string, error) {
 
 func (p *OneDriveProvider) HandleCallback(ctx context.Context, code string) error {
 	if p.clientID == "" {
-		return fmt.Errorf("ONEDRIVE_CLIENT_ID not configured")
+		return fmt.Errorf("OneDrive client ID not configured")
 	}
 
 	// Retrieve code verifier

@@ -6,7 +6,7 @@ type SafeFile struct {
 	Name         string    `json:"name"`
 	Path         string    `json:"path"`
 	LastModified time.Time `json:"lastModified"`
-	Source       string    `json:"source"`
+	Provider     string    `json:"provider"`
 }
 
 type Group struct {

@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { api, OneDriveStatus, OneDriveFile } from "../api/client";
+import { useNavigate, useSearchParams, useParams } from "react-router-dom";
+import { api, ProviderStatus, ProviderFile, Provider } from "../api/client";
 
 function formatTimeAgo(isoString: string): string {
   const date = new Date(isoString);
@@ -17,11 +17,13 @@ function formatTimeAgo(isoString: string): string {
   return `${diffDay} day${diffDay === 1 ? "" : "s"} ago`;
 }
 
-function OneDrive() {
+function ProviderPage() {
   const navigate = useNavigate();
+  const { providerId } = useParams<{ providerId: string }>();
   const [searchParams] = useSearchParams();
-  const [status, setStatus] = useState<OneDriveStatus | null>(null);
-  const [files, setFiles] = useState<OneDriveFile[]>([]);
+  const [provider, setProvider] = useState<Provider | null>(null);
+  const [status, setStatus] = useState<ProviderStatus | null>(null);
+  const [files, setFiles] = useState<ProviderFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [filesLoading, setFilesLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -30,7 +32,7 @@ function OneDrive() {
   const [error, setError] = useState<string | null>(null);
   const [, setTick] = useState(0); // Force re-render for time display
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingFilesRef = useRef<OneDriveFile[] | null>(null);
+  const pendingFilesRef = useRef<ProviderFile[] | null>(null);
   const nextSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Update time display every 20 seconds
@@ -51,7 +53,7 @@ function OneDrive() {
       }
     }
 
-    fetchStatus();
+    fetchProviderAndStatus();
 
     // Cleanup timers on unmount
     return () => {
@@ -62,7 +64,7 @@ function OneDrive() {
         clearTimeout(nextSyncTimeoutRef.current);
       }
     };
-  }, [searchParams]);
+  }, [searchParams, providerId]);
 
   const scheduleNextFetch = (nextSyncAt: string) => {
     // Clear any existing scheduled fetch
@@ -84,9 +86,19 @@ function OneDrive() {
     }, delay);
   };
 
-  const fetchStatus = async () => {
+  const fetchProviderAndStatus = async () => {
+    if (!providerId) return;
+
     try {
-      const result = await api.getOneDriveStatus();
+      // Fetch provider metadata
+      const providersResult = await api.listProviders();
+      const foundProvider = providersResult.providers?.find((p) => p.id === providerId);
+      if (foundProvider) {
+        setProvider(foundProvider);
+      }
+
+      // Fetch status
+      const result = await api.getProviderStatus(providerId);
       setStatus(result);
       if (result.connected) {
         fetchFiles();
@@ -96,27 +108,47 @@ function OneDrive() {
         }
       }
     } catch (err) {
-      console.error("Failed to fetch OneDrive status:", err);
-      setError("Failed to check OneDrive connection status.");
+      console.error("Failed to fetch provider status:", err);
+      setError("Failed to check provider connection status.");
     } finally {
       setLoading(false);
     }
   };
 
+  const fetchStatus = async () => {
+    if (!providerId) return;
+
+    try {
+      const result = await api.getProviderStatus(providerId);
+      setStatus(result);
+      if (result.connected) {
+        fetchFiles();
+        if (result.nextSyncAt) {
+          scheduleNextFetch(result.nextSyncAt);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch provider status:", err);
+      setError("Failed to check provider connection status.");
+    }
+  };
+
   const fetchFiles = async () => {
+    if (!providerId) return;
+
     setFilesLoading(true);
     try {
-      const result = await api.getOneDriveFiles();
+      const result = await api.getProviderFiles(providerId);
       setFiles(result.files || []);
     } catch (err) {
-      console.error("Failed to fetch OneDrive files:", err);
+      console.error("Failed to fetch provider files:", err);
     } finally {
       setFilesLoading(false);
     }
   };
 
   const handleToggleFile = async (fileId: string) => {
-    if (syncing) return; // Disable toggles while syncing
+    if (syncing || !providerId) return; // Disable toggles while syncing
 
     const updatedFiles = files.map((f) => (f.id === fileId ? { ...f, selected: !f.selected } : f));
     setFiles(updatedFiles);
@@ -135,8 +167,8 @@ function OneDrive() {
       setSyncing(true);
       setError(null);
       try {
-        await api.saveOneDriveFiles(filesToSave);
-        await api.syncOneDrive();
+        await api.saveProviderFiles(providerId, filesToSave);
+        await api.syncProvider(providerId);
         await fetchFiles();
         await fetchStatus();
       } catch (err) {
@@ -152,14 +184,16 @@ function OneDrive() {
   };
 
   const handleRefresh = async () => {
+    if (!providerId) return;
+
     setSyncing(true);
     setError(null);
     try {
-      await api.syncOneDrive();
+      await api.syncProvider(providerId);
       await fetchFiles();
       await fetchStatus();
     } catch (err) {
-      console.error("Failed to sync OneDrive files:", err);
+      console.error("Failed to sync provider files:", err);
       setError("Failed to sync files. Please try again.");
     } finally {
       setSyncing(false);
@@ -167,16 +201,18 @@ function OneDrive() {
   };
 
   const handleConnect = async () => {
+    if (!providerId) return;
+
     setConnecting(true);
     setError(null);
 
     try {
-      const { url } = await api.getOneDriveAuthUrl();
+      const { url } = await api.getProviderAuthUrl(providerId);
       window.location.href = url;
     } catch (err) {
       console.error("Failed to get auth URL:", err);
       if (err instanceof Error && err.message.includes("not configured")) {
-        setError("OneDrive integration is not configured. Please set ONEDRIVE_CLIENT_ID.");
+        setError("Provider integration is not configured.");
       } else {
         setError("Failed to start authentication. Please try again.");
       }
@@ -185,11 +221,13 @@ function OneDrive() {
   };
 
   const handleDisconnect = async () => {
+    if (!providerId) return;
+
     setDisconnecting(true);
     setError(null);
 
     try {
-      await api.disconnectOneDrive();
+      await api.disconnectProvider(providerId);
       await fetchStatus();
     } catch (err) {
       console.error("Failed to disconnect:", err);
@@ -213,12 +251,15 @@ function OneDrive() {
     return "??";
   };
 
+  const displayName = provider?.displayName || providerId || "Provider";
+  const icon = provider?.icon ? <img src={provider.icon} alt="" className="provider-icon" /> : "☁️";
+
   if (loading) {
     return (
       <div className="container">
         <div className="page-header">
           <h1>
-            <span className="icon">☁️</span> OneDrive
+            <span className="icon">{icon}</span> {displayName}
           </h1>
           <button className="close-button" onClick={() => navigate("/add")}>
             ✕
@@ -235,7 +276,7 @@ function OneDrive() {
     <div className="container">
       <div className="page-header">
         <h1>
-          <span className="icon">☁️</span> OneDrive
+          <span className="icon">{icon}</span> {displayName}
         </h1>
         <button className="close-button" onClick={() => navigate("/add")}>
           ✕
@@ -287,7 +328,7 @@ function OneDrive() {
               <div className="file-row">
                 <div className="file-info">
                   <div className="file-name">No .psafe3 files found</div>
-                  <div className="file-meta">Upload .psafe3 files to your OneDrive to see them here</div>
+                  <div className="file-meta">Upload .psafe3 files to see them here</div>
                 </div>
               </div>
             ) : (
@@ -359,8 +400,8 @@ function OneDrive() {
         </>
       ) : (
         <div className="connect-card">
-          <div className="connect-title">Connect your Microsoft account</div>
-          <div className="connect-desc">Sign in to sync password safes from OneDrive</div>
+          <div className="connect-title">Connect your account</div>
+          <div className="connect-desc">Sign in to sync password safes from {displayName}</div>
           <button className="connect-btn" onClick={handleConnect} disabled={connecting}>
             {connecting ? "Connecting..." : "Connect Account"}
           </button>
@@ -370,4 +411,4 @@ function OneDrive() {
   );
 }
 
-export default OneDrive;
+export default ProviderPage;

@@ -4,7 +4,6 @@ $ErrorActionPreference = "Stop"
 # Configuration - Update these values for your local environment (paths should be relative to backend/)
 $SAFES_DIR = "./testdata"         # Path to .psafe3 files
 $STATIC_DIR = "../frontend/dist"  # Path to frontend build output
-$ONEDRIVE_CLIENT_ID = ""          # Azure App Registration client ID (optional, for OneDrive sync)
 
 Write-Host "Building frontend..."
 Push-Location frontend
@@ -21,7 +20,6 @@ Get-Process -Name "pwsafe-service" -ErrorAction SilentlyContinue | Stop-Process 
 Write-Host "Starting pwsafe-service..."
 $env:PWSAFE_DIRECTORY = $SAFES_DIR
 $env:PWSAFE_STATIC_DIR = $STATIC_DIR
-$env:ONEDRIVE_CLIENT_ID = $ONEDRIVE_CLIENT_ID
 try {
     & .\pwsafe-service.exe
 } finally {

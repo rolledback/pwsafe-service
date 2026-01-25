@@ -4,7 +4,6 @@ set -e
 # Configuration - Update these values for your local environment (paths should be relative to backend/)
 SAFES_DIR="./testdata"         # Path to .psafe3 files
 STATIC_DIR="../frontend/dist"  # Path to frontend build output
-ONEDRIVE_CLIENT_ID=""          # Azure App Registration client ID (optional, for OneDrive sync)
 
 echo "Building frontend..."
 cd frontend && npm run build
@@ -18,5 +17,4 @@ pkill -f pwsafe-service || true
 echo "Starting pwsafe-service..."
 PWSAFE_DIRECTORY="$SAFES_DIR" \
 PWSAFE_STATIC_DIR="$STATIC_DIR" \
-ONEDRIVE_CLIENT_ID="$ONEDRIVE_CLIENT_ID" \
 ./pwsafe-service

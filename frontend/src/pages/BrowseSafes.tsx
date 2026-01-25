@@ -1,19 +1,26 @@
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { api, SafeFile } from "../api/client";
+import { api, SafeFile, Provider } from "../api/client";
 import ItemRow from "../components/ItemRow";
 
 function BrowseSafes() {
   const navigate = useNavigate();
   const [safes, setSafes] = useState<SafeFile[]>([]);
+  const [providers, setProviders] = useState<Map<string, Provider>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchSafes = async () => {
+    const fetchData = async () => {
       try {
-        const data = await api.listSafes();
-        setSafes(data);
+        const [safesData, providersData] = await Promise.all([api.listSafes(), api.listProviders()]);
+        setSafes(safesData);
+
+        const providerMap = new Map<string, Provider>();
+        for (const p of providersData.providers || []) {
+          providerMap.set(p.id, p);
+        }
+        setProviders(providerMap);
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load safes");
@@ -22,7 +29,7 @@ function BrowseSafes() {
       }
     };
 
-    fetchSafes();
+    fetchData();
   }, []);
 
   const handleSafeClick = (safePath: string) => {
@@ -37,6 +44,15 @@ function BrowseSafes() {
       month: "short",
       day: "numeric",
     });
+  };
+
+  const getProviderBadge = (providerId: string): { name: string; color?: string } | null => {
+    if (!providerId || providerId === "local" || providerId === "static") return null;
+    const provider = providers.get(providerId);
+    if (provider) {
+      return { name: provider.displayName, color: provider.brandColor };
+    }
+    return { name: providerId };
   };
 
   if (loading) {
@@ -68,16 +84,20 @@ function BrowseSafes() {
             <div className="empty-message">No safes found</div>
           </div>
         ) : (
-          safes.map((safe) => (
-            <ItemRow
-              key={safe.path}
-              icon="🔒"
-              name={safe.name}
-              metadata={`Modified ${formatDate(safe.lastModified)}`}
-              sourceBadge={safe.source === "onedrive" ? "OneDrive" : undefined}
-              onClick={() => handleSafeClick(safe.path)}
-            />
-          ))
+          safes.map((safe) => {
+            const badge = getProviderBadge(safe.provider);
+            return (
+              <ItemRow
+                key={safe.path}
+                icon="🔒"
+                name={safe.name}
+                metadata={`Modified ${formatDate(safe.lastModified)}`}
+                sourceBadge={badge?.name}
+                sourceBadgeColor={badge?.color}
+                onClick={() => handleSafeClick(safe.path)}
+              />
+            );
+          })
         )}
       </div>
 

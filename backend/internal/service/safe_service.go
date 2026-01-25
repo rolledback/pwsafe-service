@@ -91,7 +91,7 @@ func (s *SafeService) scanDirectory(dir, source string, recursive bool) ([]model
 				Name:         d.Name(),
 				Path:         apiPath,
 				LastModified: info.ModTime(),
-				Source:       source,
+				Provider:     source,
 			})
 
 			return nil
@@ -131,7 +131,7 @@ func (s *SafeService) scanDirectory(dir, source string, recursive bool) ([]model
 				Name:         entry.Name(),
 				Path:         apiPath,
 				LastModified: info.ModTime(),
-				Source:       source,
+				Provider:     source,
 			})
 		}
 	}

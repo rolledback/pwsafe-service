@@ -11,11 +11,13 @@ import (
 
 // Provider implements provider.SyncableSafesProvider for testing
 type Provider struct {
-	id      string
-	name    string
-	files   []provider.RemoteFile
-	content map[string][]byte // fileID -> content
-	status  *provider.ConnectionStatus
+	id         string
+	name       string
+	icon       string
+	brandColor string
+	files      []provider.RemoteFile
+	content    map[string][]byte // fileID -> content
+	status     *provider.ConnectionStatus
 
 	// Error simulation
 	ListError     error
@@ -30,11 +32,13 @@ type Provider struct {
 // NewProvider creates a new mock provider for testing
 func NewProvider(id string) *Provider {
 	return &Provider{
-		id:      id,
-		name:    "Mock " + id,
-		files:   []provider.RemoteFile{},
-		content: make(map[string][]byte),
-		status:  &provider.ConnectionStatus{Connected: true},
+		id:         id,
+		name:       "Mock " + id,
+		icon:       "data:image/svg+xml;base64,mock-icon",
+		brandColor: "#888888",
+		files:      []provider.RemoteFile{},
+		content:    make(map[string][]byte),
+		status:     &provider.ConnectionStatus{Connected: true},
 	}
 }
 
@@ -58,6 +62,16 @@ func (p *Provider) SetStatus(status *provider.ConnectionStatus) {
 	p.status = status
 }
 
+// SetIcon sets the provider icon
+func (p *Provider) SetIcon(icon string) {
+	p.icon = icon
+}
+
+// SetBrandColor sets the provider brand color
+func (p *Provider) SetBrandColor(color string) {
+	p.brandColor = color
+}
+
 // ============ IDENTITY ============
 
 func (p *Provider) ID() string {
@@ -66,6 +80,16 @@ func (p *Provider) ID() string {
 
 func (p *Provider) DisplayName() string {
 	return p.name
+}
+
+// ============ METADATA ============
+
+func (p *Provider) Icon() string {
+	return p.icon
+}
+
+func (p *Provider) BrandColor() string {
+	return p.brandColor
 }
 
 // ============ AUTH ============

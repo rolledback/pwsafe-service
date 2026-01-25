@@ -19,6 +19,10 @@ type SyncableSafesProvider interface {
 	ID() string          // Unique provider ID (e.g., "onedrive", "gdrive")
 	DisplayName() string // Human-readable name (e.g., "OneDrive", "Google Drive")
 
+	// Metadata for UI
+	Icon() string       // Base64-encoded image (data URL)
+	BrandColor() string // Hex color (e.g., "#0078D4")
+
 	// Auth lifecycle
 	GetAuthURL(ctx context.Context) (string, error)
 	HandleCallback(ctx context.Context, code string) error

@@ -4,7 +4,7 @@ export type SafeFile = {
   name: string;
   path: string;
   lastModified: string;
-  source: "static" | "onedrive";
+  provider: string; // Provider ID (e.g., "local", "onedrive", "gdrive")
 };
 
 export type Entry = {
@@ -30,7 +30,19 @@ export type EntryPasswordResponse = {
   password: string;
 };
 
-export type OneDriveStatus = {
+// Provider types
+export type Provider = {
+  id: string;
+  displayName: string;
+  icon: string;
+  brandColor: string;
+};
+
+export type ProvidersResponse = {
+  providers: Provider[];
+};
+
+export type ProviderStatus = {
   connected: boolean;
   needsReauth: boolean;
   accountName?: string;
@@ -39,30 +51,30 @@ export type OneDriveStatus = {
   nextSyncAt?: string;
 };
 
-export type OneDriveAuthURL = {
+export type ProviderAuthURL = {
   url: string;
 };
 
-export type OneDriveFile = {
+export type ProviderFile = {
   id: string;
   name: string;
   path: string;
   selected: boolean;
 };
 
-export type OneDriveFilesResponse = {
-  files: OneDriveFile[];
+export type ProviderFilesResponse = {
+  files: ProviderFile[];
 };
 
-export type OneDriveSyncResult = {
+export type ProviderSyncResult = {
   name: string;
   success: boolean;
   lastModified?: string;
   error?: string;
 };
 
-export type OneDriveSyncResponse = {
-  results: OneDriveSyncResult[];
+export type ProviderSyncResponse = {
+  results: ProviderSyncResult[];
 };
 
 export const api = {
@@ -111,45 +123,54 @@ export const api = {
     return data.password;
   },
 
-  async getOneDriveStatus(): Promise<OneDriveStatus> {
-    const response = await fetch(`${API_BASE_URL}/onedrive/status`);
+  // Provider APIs
+  async listProviders(): Promise<ProvidersResponse> {
+    const response = await fetch(`${API_BASE_URL}/providers`);
     if (!response.ok) {
-      throw new Error("Failed to get OneDrive status");
+      throw new Error("Failed to list providers");
     }
     return response.json();
   },
 
-  async getOneDriveAuthUrl(): Promise<OneDriveAuthURL> {
-    const response = await fetch(`${API_BASE_URL}/onedrive/auth/url`);
+  async getProviderStatus(providerId: string): Promise<ProviderStatus> {
+    const response = await fetch(`${API_BASE_URL}/providers/${providerId}/status`);
+    if (!response.ok) {
+      throw new Error(`Failed to get ${providerId} status`);
+    }
+    return response.json();
+  },
+
+  async getProviderAuthUrl(providerId: string): Promise<ProviderAuthURL> {
+    const response = await fetch(`${API_BASE_URL}/providers/${providerId}/auth/url`);
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || "Failed to get OneDrive auth URL");
+      throw new Error(error.error || `Failed to get ${providerId} auth URL`);
     }
     return response.json();
   },
 
-  async disconnectOneDrive(): Promise<{ success: boolean }> {
-    const response = await fetch(`${API_BASE_URL}/onedrive/disconnect`, {
+  async disconnectProvider(providerId: string): Promise<{ success: boolean }> {
+    const response = await fetch(`${API_BASE_URL}/providers/${providerId}/disconnect`, {
       method: "POST",
     });
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || "Failed to disconnect OneDrive");
+      throw new Error(error.error || `Failed to disconnect ${providerId}`);
     }
     return response.json();
   },
 
-  async getOneDriveFiles(): Promise<OneDriveFilesResponse> {
-    const response = await fetch(`${API_BASE_URL}/onedrive/files`);
+  async getProviderFiles(providerId: string): Promise<ProviderFilesResponse> {
+    const response = await fetch(`${API_BASE_URL}/providers/${providerId}/files`);
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || "Failed to get OneDrive files");
+      throw new Error(error.error || `Failed to get ${providerId} files`);
     }
     return response.json();
   },
 
-  async saveOneDriveFiles(files: OneDriveFile[]): Promise<{ success: boolean }> {
-    const response = await fetch(`${API_BASE_URL}/onedrive/files`, {
+  async saveProviderFiles(providerId: string, files: ProviderFile[]): Promise<{ success: boolean }> {
+    const response = await fetch(`${API_BASE_URL}/providers/${providerId}/files`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -158,18 +179,18 @@ export const api = {
     });
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || "Failed to save OneDrive files");
+      throw new Error(error.error || `Failed to save ${providerId} files`);
     }
     return response.json();
   },
 
-  async syncOneDrive(): Promise<OneDriveSyncResponse> {
-    const response = await fetch(`${API_BASE_URL}/onedrive/sync`, {
+  async syncProvider(providerId: string): Promise<ProviderSyncResponse> {
+    const response = await fetch(`${API_BASE_URL}/providers/${providerId}/sync`, {
       method: "POST",
     });
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || "Failed to sync OneDrive files");
+      throw new Error(error.error || `Failed to sync ${providerId} files`);
     }
     return response.json();
   },

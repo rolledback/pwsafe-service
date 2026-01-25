@@ -36,7 +36,7 @@ func TestListSafes_Handler(t *testing.T) {
 
 	// Verify source field is present
 	for _, safe := range safes {
-		if safe.Source == "" {
+		if safe.Provider == "" {
 			t.Errorf("Expected source field to be set for safe %s", safe.Name)
 		}
 		if safe.Path == "" {

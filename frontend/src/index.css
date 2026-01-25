@@ -136,6 +136,11 @@ body {
   margin-right: 0;
 }
 
+.item-row .item-icon .provider-icon {
+  width: 28px;
+  height: 28px;
+}
+
 .item-details {
   min-width: 0;
 }
@@ -156,7 +161,6 @@ body {
 }
 
 .safe-source {
-  color: #4a90e2;
   font-weight: 500;
 }
 

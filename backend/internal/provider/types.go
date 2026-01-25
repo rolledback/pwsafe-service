@@ -17,3 +17,12 @@ type ConnectionStatus struct {
 	AccountName  string
 	AccountEmail string
 }
+
+// RootSettings represents {safesDirectory}/settings.json
+type RootSettings struct {
+	BaseURL string `json:"baseUrl"` // e.g., "http://localhost:8080"
+}
+
+// ProviderFactory creates a provider from its settings.json
+// baseURL comes from root settings, used to construct callback URL
+type ProviderFactory func(providerDir string, baseURL string, settingsJSON []byte) (SyncableSafesProvider, error)

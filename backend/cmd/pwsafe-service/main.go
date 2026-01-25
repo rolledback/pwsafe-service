@@ -6,10 +6,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/rolledback/pwsafe-service/backend/internal/config"
 	"github.com/rolledback/pwsafe-service/backend/internal/handlers"
 	"github.com/rolledback/pwsafe-service/backend/internal/middleware"
+	"github.com/rolledback/pwsafe-service/backend/internal/provider"
 	"github.com/rolledback/pwsafe-service/backend/internal/provider/onedrive"
 	"github.com/rolledback/pwsafe-service/backend/internal/service"
 	"golang.org/x/time/rate"
@@ -33,11 +35,28 @@ func main() {
 	safeService := service.NewSafeService(cfg.SafesDirectory)
 	safeHandler := handlers.NewSafeHandler(safeService)
 
-	// Create OneDrive provider and sync service (new architecture)
-	onedriveProvider := onedrive.NewOneDriveProvider(cfg.SafesDirectory, cfg.OneDriveClientID, cfg.OneDriveRedirectURI)
-	onedriveSyncService := service.NewSyncableSafesService(ctx, cfg.SafesDirectory, onedriveProvider)
-	defer onedriveSyncService.Stop()
-	onedriveHandler := handlers.NewOneDriveHandler(onedriveSyncService)
+	// Create provider registry and register factories
+	registry := provider.NewRegistry()
+	registry.Register("onedrive", onedrive.Factory)
+
+	// Discover providers from safes directory
+	providers, err := registry.Discover(cfg.SafesDirectory)
+	if err != nil {
+		log.Fatalf("Failed to discover providers: %v", err)
+	}
+
+	// Create SyncableSafesService for each discovered provider
+	services := make(map[string]*service.SyncableSafesService)
+	for id, p := range providers {
+		svc := service.NewSyncableSafesService(ctx, cfg.SafesDirectory, p)
+		services[id] = svc
+		defer svc.Stop()
+	}
+
+	log.Printf("Discovered %d provider(s)", len(services))
+
+	// Create providers handler
+	providersHandler := handlers.NewProvidersHandler(services)
 
 	rateLimiter := middleware.NewRateLimiter(rate.Limit(5), 5)
 
@@ -52,13 +71,16 @@ func main() {
 		}
 	})))
 
-	// OneDrive routes
-	http.HandleFunc("/api/onedrive/status", middleware.CORS(rateLimiter.Limit(onedriveHandler.GetStatus)))
-	http.HandleFunc("/api/onedrive/auth/url", middleware.CORS(rateLimiter.Limit(onedriveHandler.GetAuthURL)))
-	http.HandleFunc("/api/onedrive/auth/callback", onedriveHandler.HandleCallback)
-	http.HandleFunc("/api/onedrive/disconnect", middleware.CORS(rateLimiter.Limit(onedriveHandler.Disconnect)))
-	http.HandleFunc("/api/onedrive/files", middleware.CORS(rateLimiter.Limit(onedriveHandler.HandleFiles)))
-	http.HandleFunc("/api/onedrive/sync", middleware.CORS(rateLimiter.Limit(onedriveHandler.Sync)))
+	// Provider routes (new generic API)
+	http.HandleFunc("/api/providers", middleware.CORS(rateLimiter.Limit(providersHandler.ListProviders)))
+	http.HandleFunc("/api/providers/", middleware.CORS(func(w http.ResponseWriter, r *http.Request) {
+		// Don't rate limit callbacks (they come from OAuth redirects)
+		if strings.HasSuffix(r.URL.Path, "/auth/callback") {
+			providersHandler.Route(w, r)
+		} else {
+			rateLimiter.Limit(providersHandler.Route)(w, r)
+		}
+	}))
 
 	// Serve static files with SPA fallback
 	http.HandleFunc("/web/", func(w http.ResponseWriter, r *http.Request) {
