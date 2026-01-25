@@ -51,6 +51,9 @@ function AddSafes() {
             />
           ))
         )}
+
+        {/* Static Upload option - always shown */}
+        <ItemRow icon="📤" name="Upload" onClick={() => navigate("/add/static")} />
       </div>
     </div>
   );

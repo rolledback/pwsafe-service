@@ -194,4 +194,41 @@ export const api = {
     }
     return response.json();
   },
+
+  // Static provider APIs (upload/delete static safes)
+  async uploadStaticSafe(file: File, overwrite?: boolean): Promise<{ success: boolean; name: string; exists?: boolean }> {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const url = overwrite ? `${API_BASE_URL}/providers/static/files?overwrite=true` : `${API_BASE_URL}/providers/static/files`;
+
+    const response = await fetch(url, {
+      method: "POST",
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (response.status === 409) {
+      // File exists, return conflict info
+      return { success: false, name: data.name, exists: true };
+    }
+
+    if (!response.ok) {
+      throw new Error(data.error || "Failed to upload safe");
+    }
+
+    return { success: true, name: data.name };
+  },
+
+  async deleteStaticSafe(filename: string): Promise<{ success: boolean }> {
+    const response = await fetch(`${API_BASE_URL}/providers/static/files/${encodeURIComponent(filename)}`, {
+      method: "DELETE",
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || "Failed to delete safe");
+    }
+    return response.json();
+  },
 };

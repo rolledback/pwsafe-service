@@ -58,6 +58,9 @@ func main() {
 	// Create providers handler
 	providersHandler := handlers.NewProvidersHandler(services)
 
+	// Create static provider handler (for upload/delete of static safes)
+	staticProviderHandler := handlers.NewStaticProviderHandler(cfg.SafesDirectory)
+
 	rateLimiter := middleware.NewRateLimiter(rate.Limit(5), 5)
 
 	http.HandleFunc("/api/safes", middleware.CORS(rateLimiter.Limit(safeHandler.ListSafes)))
@@ -73,6 +76,7 @@ func main() {
 
 	// Provider routes (new generic API)
 	http.HandleFunc("/api/providers", middleware.CORS(rateLimiter.Limit(providersHandler.ListProviders)))
+	http.HandleFunc("/api/providers/static/", middleware.CORS(rateLimiter.Limit(staticProviderHandler.Route)))
 	http.HandleFunc("/api/providers/", middleware.CORS(func(w http.ResponseWriter, r *http.Request) {
 		// Don't rate limit callbacks (they come from OAuth redirects)
 		if strings.HasSuffix(r.URL.Path, "/auth/callback") {
