@@ -163,7 +163,6 @@ function StaticSafesPage() {
           <div className="file-row">
             <div className="file-info">
               <div className="file-name">No uploaded safes yet</div>
-              <div className="file-meta">Upload a .psafe3 file to get started</div>
             </div>
           </div>
         ) : (

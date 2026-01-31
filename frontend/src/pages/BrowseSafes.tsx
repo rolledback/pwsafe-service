@@ -78,27 +78,20 @@ function BrowseSafes() {
       <h1>Select a Password Safe</h1>
 
       <div className="safe-grid">
-        {safes.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-box"></div>
-            <div className="empty-message">No safes found</div>
-          </div>
-        ) : (
-          safes.map((safe) => {
-            const badge = getProviderBadge(safe.provider);
-            return (
-              <ItemRow
-                key={safe.path}
-                icon="🔒"
-                name={safe.name}
-                metadata={`Modified ${formatDate(safe.lastModified)}`}
-                sourceBadge={badge?.name}
-                sourceBadgeColor={badge?.color}
-                onClick={() => handleSafeClick(safe.path)}
-              />
-            );
-          })
-        )}
+        {safes.map((safe) => {
+          const badge = getProviderBadge(safe.provider);
+          return (
+            <ItemRow
+              key={safe.path}
+              icon="🔒"
+              name={safe.name}
+              metadata={`Modified ${formatDate(safe.lastModified)}`}
+              sourceBadge={badge?.name}
+              sourceBadgeColor={badge?.color}
+              onClick={() => handleSafeClick(safe.path)}
+            />
+          );
+        })}
       </div>
 
       <div className="add-banner" onClick={() => navigate("/add")}>
