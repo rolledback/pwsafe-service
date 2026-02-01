@@ -55,11 +55,22 @@ func Load() *Config {
 }
 
 // LoadSettings reads and parses the settings.json from the config directory
+// Returns default settings if the file doesn't exist or is empty
 func LoadSettings(configDir string) (*Settings, error) {
 	settingsPath := filepath.Join(configDir, "settings.json")
 	data, err := os.ReadFile(settingsPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			log.Printf("No settings.json found, using defaults")
+			return &Settings{}, nil
+		}
 		return nil, fmt.Errorf("failed to read settings.json: %w", err)
+	}
+
+	// Handle empty file
+	if len(data) == 0 {
+		log.Printf("Empty settings.json, using defaults")
+		return &Settings{}, nil
 	}
 
 	var settings Settings
