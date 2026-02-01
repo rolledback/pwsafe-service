@@ -4,11 +4,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/rolledback/pwsafe-service/backend/internal/testutil"
 )
 
 func TestListSafes(t *testing.T) {
-	testDir := "../../testdata"
-	service := NewSafeService(testDir)
+	tmpDir := testutil.SetupTestDataDir(t)
+	service := NewSafeService(tmpDir)
 
 	safes, err := service.ListSafes()
 	if err != nil {
@@ -27,8 +29,8 @@ func TestListSafes(t *testing.T) {
 			if safe.Provider != "static" {
 				t.Errorf("Expected source 'static' for simple.psafe3, got '%s'", safe.Provider)
 			}
-			if safe.Path != "/testdata/simple.psafe3" {
-				t.Errorf("Expected path '/testdata/simple.psafe3', got '%s'", safe.Path)
+			if safe.Path != "/data/static/simple.psafe3" {
+				t.Errorf("Expected path '/data/static/simple.psafe3', got '%s'", safe.Path)
 			}
 		}
 		if safe.Name == "three.psafe3" {
@@ -50,17 +52,21 @@ func TestListSafes(t *testing.T) {
 func TestListSafes_NonexistentDirectory(t *testing.T) {
 	service := NewSafeService("/nonexistent/path")
 
-	_, err := service.ListSafes()
-	if err == nil {
-		t.Error("Expected error for nonexistent directory")
+	// ListSafes no longer returns error for missing directories - it just returns empty
+	safes, err := service.ListSafes()
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if len(safes) != 0 {
+		t.Errorf("Expected 0 safes for nonexistent directory, got %d", len(safes))
 	}
 }
 
 func TestUnlockSafe_Simple(t *testing.T) {
-	testDir := "../../testdata"
-	service := NewSafeService(testDir)
+	tmpDir := testutil.SetupTestDataDir(t)
+	service := NewSafeService(tmpDir)
 
-	structure, err := service.UnlockSafe("/testdata/simple.psafe3", "password")
+	structure, err := service.UnlockSafe("/data/static/simple.psafe3", "password")
 	if err != nil {
 		t.Fatalf("UnlockSafe failed: %v", err)
 	}
@@ -90,10 +96,10 @@ func TestUnlockSafe_Simple(t *testing.T) {
 }
 
 func TestUnlockSafe_Three(t *testing.T) {
-	testDir := "../../testdata"
-	service := NewSafeService(testDir)
+	tmpDir := testutil.SetupTestDataDir(t)
+	service := NewSafeService(tmpDir)
 
-	structure, err := service.UnlockSafe("/testdata/three.psafe3", "three3#;")
+	structure, err := service.UnlockSafe("/data/static/three.psafe3", "three3#;")
 	if err != nil {
 		t.Fatalf("UnlockSafe failed: %v", err)
 	}
@@ -104,38 +110,38 @@ func TestUnlockSafe_Three(t *testing.T) {
 }
 
 func TestUnlockSafe_WrongPassword(t *testing.T) {
-	testDir := "../../testdata"
-	service := NewSafeService(testDir)
+	tmpDir := testutil.SetupTestDataDir(t)
+	service := NewSafeService(tmpDir)
 
-	_, err := service.UnlockSafe("/testdata/simple.psafe3", "wrongpassword")
+	_, err := service.UnlockSafe("/data/static/simple.psafe3", "wrongpassword")
 	if err == nil {
 		t.Error("Expected error for wrong password")
 	}
 }
 
 func TestUnlockSafe_NonexistentFile(t *testing.T) {
-	testDir := "../../testdata"
-	service := NewSafeService(testDir)
+	tmpDir := testutil.SetupEmptyDataDir(t)
+	service := NewSafeService(tmpDir)
 
-	_, err := service.UnlockSafe("/testdata/nonexistent.psafe3", "password")
+	_, err := service.UnlockSafe("/data/static/nonexistent.psafe3", "password")
 	if err == nil {
 		t.Error("Expected error for nonexistent file")
 	}
 }
 
 func TestUnlockSafe_DirectoryTraversal(t *testing.T) {
-	testDir := "../../testdata"
-	service := NewSafeService(testDir)
+	tmpDir := testutil.SetupEmptyDataDir(t)
+	service := NewSafeService(tmpDir)
 
-	_, err := service.UnlockSafe("/testdata/../../../etc/passwd", "password")
+	_, err := service.UnlockSafe("/data/static/../../../etc/passwd", "password")
 	if err == nil {
 		t.Error("Expected error for directory traversal attempt")
 	}
 }
 
 func TestUnlockSafe_InvalidPath(t *testing.T) {
-	testDir := "../../testdata"
-	service := NewSafeService(testDir)
+	tmpDir := testutil.SetupEmptyDataDir(t)
+	service := NewSafeService(tmpDir)
 
 	_, err := service.UnlockSafe("/other/simple.psafe3", "password")
 	if err == nil {
@@ -144,10 +150,10 @@ func TestUnlockSafe_InvalidPath(t *testing.T) {
 }
 
 func TestGetEntryPassword_Simple(t *testing.T) {
-	testDir := "../../testdata"
-	service := NewSafeService(testDir)
+	tmpDir := testutil.SetupTestDataDir(t)
+	service := NewSafeService(tmpDir)
 
-	password, err := service.GetEntryPassword("/testdata/simple.psafe3", "password", "c4dcfb52-b944-f141-af96-b746f184afe2")
+	password, err := service.GetEntryPassword("/data/static/simple.psafe3", "password", "c4dcfb52-b944-f141-af96-b746f184afe2")
 	if err != nil {
 		t.Fatalf("GetEntryPassword failed: %v", err)
 	}
@@ -158,10 +164,10 @@ func TestGetEntryPassword_Simple(t *testing.T) {
 }
 
 func TestGetEntryPassword_Three(t *testing.T) {
-	testDir := "../../testdata"
-	service := NewSafeService(testDir)
+	tmpDir := testutil.SetupTestDataDir(t)
+	service := NewSafeService(tmpDir)
 
-	password, err := service.GetEntryPassword("/testdata/three.psafe3", "three3#;", "6f1738b6-4a22-314a-8bbf-5c3507f0d489")
+	password, err := service.GetEntryPassword("/data/static/three.psafe3", "three3#;", "6f1738b6-4a22-314a-8bbf-5c3507f0d489")
 	if err != nil {
 		t.Fatalf("GetEntryPassword failed: %v", err)
 	}
@@ -172,42 +178,43 @@ func TestGetEntryPassword_Three(t *testing.T) {
 }
 
 func TestGetEntryPassword_WrongUUID(t *testing.T) {
-	testDir := "../../testdata"
-	service := NewSafeService(testDir)
+	tmpDir := testutil.SetupTestDataDir(t)
+	service := NewSafeService(tmpDir)
 
-	_, err := service.GetEntryPassword("/testdata/simple.psafe3", "password", "00000000-0000-0000-0000-000000000000")
+	_, err := service.GetEntryPassword("/data/static/simple.psafe3", "password", "00000000-0000-0000-0000-000000000000")
 	if err == nil {
 		t.Error("Expected error for nonexistent UUID")
 	}
 }
 
 func TestGetEntryPassword_WrongPassword(t *testing.T) {
-	testDir := "../../testdata"
-	service := NewSafeService(testDir)
+	tmpDir := testutil.SetupTestDataDir(t)
+	service := NewSafeService(tmpDir)
 
-	_, err := service.GetEntryPassword("/testdata/simple.psafe3", "wrongpassword", "c4dcfb52-b944-f141-af96-b746f184afe2")
+	_, err := service.GetEntryPassword("/data/static/simple.psafe3", "wrongpassword", "c4dcfb52-b944-f141-af96-b746f184afe2")
 	if err == nil {
 		t.Error("Expected error for wrong password")
 	}
 }
 
 func TestGetEntryPassword_NonexistentFile(t *testing.T) {
-	testDir := "../../testdata"
-	service := NewSafeService(testDir)
+	tmpDir := testutil.SetupEmptyDataDir(t)
+	service := NewSafeService(tmpDir)
 
-	_, err := service.GetEntryPassword("/testdata/nonexistent.psafe3", "password", "c4dcfb52-b944-f141-af96-b746f184afe2")
+	_, err := service.GetEntryPassword("/data/static/nonexistent.psafe3", "password", "c4dcfb52-b944-f141-af96-b746f184afe2")
 	if err == nil {
 		t.Error("Expected error for nonexistent file")
 	}
 }
 
 func TestListSafes_OnlyPsafe3Files(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := testutil.SetupEmptyDataDir(t)
+	staticDir := filepath.Join(tmpDir, "static")
 
-	os.WriteFile(filepath.Join(tmpDir, "test.psafe3"), []byte{}, 0644)
-	os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte{}, 0644)
-	os.WriteFile(filepath.Join(tmpDir, "README.md"), []byte{}, 0644)
-	os.Mkdir(filepath.Join(tmpDir, "subdir"), 0755)
+	os.WriteFile(filepath.Join(staticDir, "test.psafe3"), []byte{}, 0644)
+	os.WriteFile(filepath.Join(staticDir, "test.txt"), []byte{}, 0644)
+	os.WriteFile(filepath.Join(staticDir, "README.md"), []byte{}, 0644)
+	os.Mkdir(filepath.Join(staticDir, "subdir"), 0755)
 
 	service := NewSafeService(tmpDir)
 	safes, err := service.ListSafes()
@@ -219,21 +226,21 @@ func TestListSafes_OnlyPsafe3Files(t *testing.T) {
 		t.Errorf("Expected 1 safe file, got %d", len(safes))
 	}
 
-	if safes[0].Name != "test.psafe3" {
-		t.Errorf("Expected 'test.psafe3', got '%s'", safes[0].Name)
-	}
+	if len(safes) > 0 {
+		if safes[0].Name != "test.psafe3" {
+			t.Errorf("Expected 'test.psafe3', got '%s'", safes[0].Name)
+		}
 
-	if safes[0].Provider != "static" {
-		t.Errorf("Expected source 'static', got '%s'", safes[0].Provider)
+		if safes[0].Provider != "static" {
+			t.Errorf("Expected source 'static', got '%s'", safes[0].Provider)
+		}
 	}
 }
 
 func TestListSafes_WithOnedriveSubdir(t *testing.T) {
-	tmpDir := t.TempDir()
-	baseName := filepath.Base(tmpDir)
-
-	// Create static safe
-	os.WriteFile(filepath.Join(tmpDir, "static.psafe3"), []byte{}, 0644)
+	tmpDir := testutil.SetupEmptyDataDir(t)
+	staticDir := filepath.Join(tmpDir, "static")
+	os.WriteFile(filepath.Join(staticDir, "static.psafe3"), []byte{}, 0644)
 
 	// Create onedrive subdir with nested directories preserving OneDrive path structure
 	onedriveDir := filepath.Join(tmpDir, "onedrive")
@@ -273,7 +280,7 @@ func TestListSafes_WithOnedriveSubdir(t *testing.T) {
 			if safe.Provider != "onedrive" {
 				t.Errorf("Expected source 'onedrive', got '%s'", safe.Provider)
 			}
-			expectedPath := "/" + baseName + "/onedrive/synced.psafe3"
+			expectedPath := "/data/onedrive/synced.psafe3"
 			if safe.Path != expectedPath {
 				t.Errorf("Expected path '%s', got '%s'", expectedPath, safe.Path)
 			}
@@ -283,7 +290,7 @@ func TestListSafes_WithOnedriveSubdir(t *testing.T) {
 			if safe.Provider != "onedrive" {
 				t.Errorf("Expected source 'onedrive', got '%s'", safe.Provider)
 			}
-			expectedPath := "/" + baseName + "/onedrive/Documents/Passwords/work.psafe3"
+			expectedPath := "/data/onedrive/Documents/Passwords/work.psafe3"
 			if safe.Path != expectedPath {
 				t.Errorf("Expected path '%s', got '%s'", expectedPath, safe.Path)
 			}
@@ -302,10 +309,9 @@ func TestListSafes_WithOnedriveSubdir(t *testing.T) {
 }
 
 func TestListSafes_NoOnedriveSubdir(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Create static safe only, no onedrive dir
-	os.WriteFile(filepath.Join(tmpDir, "static.psafe3"), []byte{}, 0644)
+	tmpDir := testutil.SetupEmptyDataDir(t)
+	staticDir := filepath.Join(tmpDir, "static")
+	os.WriteFile(filepath.Join(staticDir, "static.psafe3"), []byte{}, 0644)
 
 	service := NewSafeService(tmpDir)
 	safes, err := service.ListSafes()
@@ -319,8 +325,7 @@ func TestListSafes_NoOnedriveSubdir(t *testing.T) {
 }
 
 func TestListSafes_OnedriveDeepNesting(t *testing.T) {
-	tmpDir := t.TempDir()
-	baseName := filepath.Base(tmpDir)
+	tmpDir := testutil.SetupEmptyDataDir(t)
 
 	// Create deeply nested OneDrive structure
 	onedriveDir := filepath.Join(tmpDir, "onedrive")
@@ -338,23 +343,24 @@ func TestListSafes_OnedriveDeepNesting(t *testing.T) {
 		t.Errorf("Expected 1 safe file, got %d", len(safes))
 	}
 
-	if safes[0].Name != "bank.psafe3" {
-		t.Errorf("Expected name 'bank.psafe3', got '%s'", safes[0].Name)
-	}
+	if len(safes) > 0 {
+		if safes[0].Name != "bank.psafe3" {
+			t.Errorf("Expected name 'bank.psafe3', got '%s'", safes[0].Name)
+		}
 
-	expectedPath := "/" + baseName + "/onedrive/Personal/Finance/Banking/Accounts/bank.psafe3"
-	if safes[0].Path != expectedPath {
-		t.Errorf("Expected path '%s', got '%s'", expectedPath, safes[0].Path)
+		expectedPath := "/data/onedrive/Personal/Finance/Banking/Accounts/bank.psafe3"
+		if safes[0].Path != expectedPath {
+			t.Errorf("Expected path '%s', got '%s'", expectedPath, safes[0].Path)
+		}
 	}
 }
 
 func TestListSafes_SkipsHiddenFilesInRoot(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Create normal safe and hidden files in root
-	os.WriteFile(filepath.Join(tmpDir, "normal.psafe3"), []byte{}, 0644)
-	os.WriteFile(filepath.Join(tmpDir, ".hidden.psafe3"), []byte{}, 0644)
-	os.WriteFile(filepath.Join(tmpDir, ".tokens.json"), []byte{}, 0644)
+	tmpDir := testutil.SetupEmptyDataDir(t)
+	staticDir := filepath.Join(tmpDir, "static")
+	os.WriteFile(filepath.Join(staticDir, "normal.psafe3"), []byte{}, 0644)
+	os.WriteFile(filepath.Join(staticDir, ".hidden.psafe3"), []byte{}, 0644)
+	os.WriteFile(filepath.Join(staticDir, ".tokens.json"), []byte{}, 0644)
 
 	service := NewSafeService(tmpDir)
 	safes, err := service.ListSafes()
@@ -366,13 +372,13 @@ func TestListSafes_SkipsHiddenFilesInRoot(t *testing.T) {
 		t.Errorf("Expected 1 safe file (hidden files skipped), got %d", len(safes))
 	}
 
-	if safes[0].Name != "normal.psafe3" {
+	if len(safes) > 0 && safes[0].Name != "normal.psafe3" {
 		t.Errorf("Expected name 'normal.psafe3', got '%s'", safes[0].Name)
 	}
 }
 
 func TestListSafes_SkipsHiddenDirectories(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := testutil.SetupEmptyDataDir(t)
 
 	// Create onedrive with hidden directory containing a safe
 	onedriveDir := filepath.Join(tmpDir, "onedrive")

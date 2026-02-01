@@ -20,15 +20,15 @@ type SafeRef struct {
 }
 
 type SafeService struct {
-	safesDirectory string
-	idCache        map[string]SafeRef // id → {provider, path}
-	cacheMutex     sync.RWMutex
+	dataDir    string
+	idCache    map[string]SafeRef // id → {provider, path}
+	cacheMutex sync.RWMutex
 }
 
-func NewSafeService(safesDirectory string) *SafeService {
+func NewSafeService(dataDir string) *SafeService {
 	return &SafeService{
-		safesDirectory: safesDirectory,
-		idCache:        make(map[string]SafeRef),
+		dataDir: dataDir,
+		idCache: make(map[string]SafeRef),
 	}
 }
 
@@ -60,16 +60,16 @@ func (s *SafeService) RefreshCache() error {
 func (s *SafeService) ListSafes() ([]models.SafeFile, error) {
 	safes := []models.SafeFile{}
 
-	// Scan root safes directory (static safes) - non-recursive
-	rootSafes, err := s.scanDirectory(s.safesDirectory, "static", false)
-	if err != nil {
-		return nil, err
+	// Scan static safes directory (data/static/) - non-recursive
+	staticDir := filepath.Join(s.dataDir, "static")
+	staticSafes, err := s.scanDirectory(staticDir, "static", false)
+	if err == nil {
+		safes = append(safes, staticSafes...)
 	}
-	safes = append(safes, rootSafes...)
 
 	// Scan all subdirectories as potential provider directories
-	// Each subdirectory is treated as a provider (e.g., "onedrive", "gdrive")
-	entries, err := os.ReadDir(s.safesDirectory)
+	// Each subdirectory (except "static") is treated as a provider (e.g., "onedrive", "gdrive")
+	entries, err := os.ReadDir(s.dataDir)
 	if err != nil {
 		return safes, nil // Return what we have if we can't read subdirs
 	}
@@ -80,7 +80,11 @@ func (s *SafeService) ListSafes() ([]models.SafeFile, error) {
 		}
 
 		providerID := entry.Name()
-		providerDir := filepath.Join(s.safesDirectory, providerID)
+		if providerID == "static" {
+			continue // Already handled above
+		}
+
+		providerDir := filepath.Join(s.dataDir, providerID)
 		providerSafes, err := s.scanDirectory(providerDir, providerID, true)
 		if err == nil {
 			safes = append(safes, providerSafes...)
@@ -92,11 +96,14 @@ func (s *SafeService) ListSafes() ([]models.SafeFile, error) {
 	s.idCache = make(map[string]SafeRef)
 	for i := range safes {
 		safe := &safes[i]
-		// Compute relative path for ID: strip "/safes/" prefix
-		relPath := strings.TrimPrefix(safe.Path, "/"+filepath.Base(s.safesDirectory)+"/")
+		// Compute relative path for ID
+		var relPath string
 		if safe.Provider == "static" {
-			// Static safes are at root, relPath is just the filename
+			// Static safes: relPath is just the filename
 			relPath = safe.Name
+		} else {
+			// Provider safes: extract path relative to provider dir
+			relPath = strings.TrimPrefix(safe.Path, "/data/"+safe.Provider+"/")
 		}
 		id := s.ComputeID(safe.Provider, relPath)
 		safe.ID = id
@@ -138,8 +145,8 @@ func (s *SafeService) scanDirectory(dir, source string, recursive bool) ([]model
 			}
 
 			// Use forward slashes for API path consistency (URL-style)
-			relPath, _ := filepath.Rel(s.safesDirectory, path)
-			apiPath := "/" + filepath.ToSlash(filepath.Join(filepath.Base(s.safesDirectory), relPath))
+			relPath, _ := filepath.Rel(s.dataDir, path)
+			apiPath := "/data/" + filepath.ToSlash(relPath)
 
 			safes = append(safes, models.SafeFile{
 				Name:         d.Name(),
@@ -156,7 +163,7 @@ func (s *SafeService) scanDirectory(dir, source string, recursive bool) ([]model
 	} else {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read safes directory: %w", err)
+			return nil, fmt.Errorf("failed to read directory: %w", err)
 		}
 
 		for _, entry := range entries {
@@ -179,7 +186,8 @@ func (s *SafeService) scanDirectory(dir, source string, recursive bool) ([]model
 			}
 
 			// Use forward slashes for API path consistency (URL-style)
-			apiPath := "/" + filepath.ToSlash(filepath.Join(filepath.Base(s.safesDirectory), getRelativePath(s.safesDirectory, dir), entry.Name()))
+			relPath, _ := filepath.Rel(s.dataDir, filepath.Join(dir, entry.Name()))
+			apiPath := "/data/" + filepath.ToSlash(relPath)
 
 			safes = append(safes, models.SafeFile{
 				Name:         entry.Name(),
@@ -201,36 +209,35 @@ func getRelativePath(base, target string) string {
 	return rel
 }
 
-// ValidateSafePath validates that the given path is within the safes directory
+// ValidateSafePath validates that the given path is within the data directory
 // and returns the absolute filesystem path if valid.
 func (s *SafeService) ValidateSafePath(safePath string) (string, error) {
-	// safePath should be like "/safes/file.psafe3" or "/safes/onedrive/file.psafe3"
-	// Convert to filesystem path relative to safesDirectory
+	// safePath should be like "/data/static/file.psafe3" or "/data/onedrive/file.psafe3"
+	// Convert to filesystem path relative to dataDir
 
-	// Remove leading slash and "safes/" prefix
+	// Remove leading slash and "data/" prefix
 	cleanPath := strings.TrimPrefix(safePath, "/")
-	safesPrefix := filepath.Base(s.safesDirectory) + "/"
-	if !strings.HasPrefix(cleanPath, safesPrefix) {
-		return "", fmt.Errorf("invalid safe path: must be within safes directory")
+	if !strings.HasPrefix(cleanPath, "data/") {
+		return "", fmt.Errorf("invalid safe path: must be within data directory")
 	}
-	relativePath := strings.TrimPrefix(cleanPath, safesPrefix)
+	relativePath := strings.TrimPrefix(cleanPath, "data/")
 
 	// Build absolute path
-	absPath := filepath.Join(s.safesDirectory, filepath.FromSlash(relativePath))
+	absPath := filepath.Join(s.dataDir, filepath.FromSlash(relativePath))
 
-	// Security: ensure the resolved path is still within safesDirectory
+	// Security: ensure the resolved path is still within dataDir
 	absPath, err := filepath.Abs(absPath)
 	if err != nil {
 		return "", fmt.Errorf("invalid safe path: %w", err)
 	}
 
-	absSafesDir, err := filepath.Abs(s.safesDirectory)
+	absDataDir, err := filepath.Abs(s.dataDir)
 	if err != nil {
-		return "", fmt.Errorf("invalid safes directory: %w", err)
+		return "", fmt.Errorf("invalid data directory: %w", err)
 	}
 
 	// Check that the path is within allowed directories
-	if !strings.HasPrefix(absPath, absSafesDir+string(filepath.Separator)) && absPath != absSafesDir {
+	if !strings.HasPrefix(absPath, absDataDir+string(filepath.Separator)) && absPath != absDataDir {
 		return "", fmt.Errorf("invalid safe path: directory traversal not allowed")
 	}
 

@@ -35,11 +35,6 @@ const (
 	onedriveIcon = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgNS41IDMyIDIwLjUiPjx0aXRsZT5PZmZpY2VDb3JlMTBfMzJ4XzI0eF8yMHhfMTZ4XzAxLTIyLTIwMTk8L3RpdGxlPjxnIGlkPSJTVFlMRV9DT0xPUiI+PHBhdGggZD0iTTEyLjIwMjQ1LDExLjE5MjkybC4wMDAzMS0uMDAxMSw2LjcxNzY1LDQuMDIzNzksNC4wMDI5My0xLjY4NDUxLjAwMDE4LjAwMDY4QTYuNDc2OCw2LjQ3NjgsMCwwLDEsMjUuNSwxM2MuMTQ3NjQsMCwuMjkzNTguMDA2Ny40Mzg3OC4wMTYzOWExMC4wMDA3NSwxMC4wMDA3NSwwLDAsMC0xOC4wNDEtMy4wMTM4MUM3LjkzMiwxMC4wMDIxNSw3Ljk2NTcsMTAsOCwxMEE3Ljk2MDczLDcuOTYwNzMsMCwwLDEsMTIuMjAyNDUsMTEuMTkyOTJaIiBmaWxsPSIjMDM2NGI4Ii8+PHBhdGggZD0iTTEyLjIwMjc2LDExLjE5MTgybC0uMDAwMzEuMDAxMUE3Ljk2MDczLDcuOTYwNzMsMCwwLDAsOCwxMGMtLjAzNDMsMC0uMDY4MDUuMDAyMTUtLjEwMjIzLjAwMjU4QTcuOTk2NzYsNy45OTY3NiwwLDAsMCwxLjQzNzMyLDIyLjU3Mjc3bDUuOTI0LTIuNDkyOTIsMi42MzM0Mi0xLjEwODE5LDUuODYzNTMtMi40Njc0NiwzLjA2MjEzLTEuMjg4NTlaIiBmaWxsPSIjMDA3OGQ0Ii8+PHBhdGggZD0iTTI1LjkzODc4LDEzLjAxNjM5QzI1Ljc5MzU4LDEzLjAwNjcsMjUuNjQ3NjQsMTMsMjUuNSwxM2E2LjQ3NjgsNi40NzY4LDAsMCwwLTIuNTc2NDguNTMxNzhsLS4wMDAxOC0uMDAwNjgtNC4wMDI5MywxLjY4NDUxLDEuMTYwNzcuNjk1MjhMMjMuODg2MTEsMTguMTlsMS42NjAwOS45OTQzOCw1LjY3NjMzLDMuNDAwMDdhNi41MDAyLDYuNTAwMiwwLDAsMC01LjI4Mzc1LTkuNTY4MDVaIiBmaWxsPSIjMTQ5MGRmIi8+PHBhdGggZD0iTTI1LjU0NjIsMTkuMTg0MzcsMjMuODg2MTEsMTguMTlsLTMuODA0OTMtMi4yNzkxLTEuMTYwNzctLjY5NTI4TDE1Ljg1ODI4LDE2LjUwNDIsOS45OTQ3NSwxOC45NzE2Niw3LjM2MTMzLDIwLjA3OTg1bC01LjkyNCwyLjQ5MjkyQTcuOTg4ODksNy45ODg4OSwwLDAsMCw4LDI2SDI1LjVhNi40OTgzNyw2LjQ5ODM3LDAsMCwwLDUuNzIyNTMtMy40MTU1NloiIGZpbGw9IiMyOGE4ZWEiLz48L2c+PC9zdmc+"
 )
 
-// Settings represents the OneDrive provider settings from settings.json
-type Settings struct {
-	ClientID string `json:"clientId"`
-}
-
 // tokens is the internal struct for storing OAuth tokens
 type tokens struct {
 	AccessToken  string `json:"accessToken"`
@@ -57,25 +52,30 @@ type OneDriveProvider struct {
 	tokenMutex  sync.Mutex
 }
 
-// Factory creates an OneDriveProvider from settings.json content
-func Factory(providerDir string, baseURL string, settingsJSON []byte) (provider.SyncableSafesProvider, error) {
-	var settings Settings
-	if err := json.Unmarshal(settingsJSON, &settings); err != nil {
-		return nil, fmt.Errorf("invalid settings.json: %w", err)
-	}
-	if settings.ClientID == "" {
-		return nil, fmt.Errorf("clientId is required in settings.json")
+// Factory creates an OneDriveProvider from the settings.json providers config
+func Factory(providerID string, dataDir string, baseURL string, providerConfig map[string]any) (provider.SyncableSafesProvider, error) {
+	clientID, ok := providerConfig["clientId"].(string)
+	if !ok || clientID == "" {
+		return nil, fmt.Errorf("clientId is required for onedrive provider")
 	}
 
 	// Callback URL derived from baseURL + fixed path
 	redirectURI := strings.TrimSuffix(baseURL, "/") + "/api/providers/onedrive/auth/callback"
 
-	return NewOneDriveProvider(providerDir, settings.ClientID, redirectURI), nil
+	// Storage dir is dataDir/{providerID}
+	storageDir := filepath.Join(dataDir, providerID)
+
+	return NewOneDriveProvider(storageDir, clientID, redirectURI)
 }
 
 // NewOneDriveProvider creates a new OneDrive provider
 // storageDir is the provider's directory where tokens and data are stored
-func NewOneDriveProvider(storageDir, clientID, redirectURI string) *OneDriveProvider {
+func NewOneDriveProvider(storageDir, clientID, redirectURI string) (*OneDriveProvider, error) {
+	// Auto-create data folder
+	if err := os.MkdirAll(storageDir, 0700); err != nil {
+		return nil, fmt.Errorf("failed to create provider data directory: %w", err)
+	}
+
 	p := &OneDriveProvider{
 		storageDir:  storageDir,
 		clientID:    clientID,
@@ -83,7 +83,7 @@ func NewOneDriveProvider(storageDir, clientID, redirectURI string) *OneDriveProv
 	}
 	// Clean up any stale code verifier from previous runs
 	p.cleanupStaleCodeVerifier()
-	return p
+	return p, nil
 }
 
 // ============ IDENTITY (2 methods) ============

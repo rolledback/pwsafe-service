@@ -9,6 +9,7 @@ import (
 
 	"github.com/rolledback/pwsafe-service/backend/internal/models"
 	"github.com/rolledback/pwsafe-service/backend/internal/service"
+	"github.com/rolledback/pwsafe-service/backend/internal/testutil"
 )
 
 // Helper to get safe ID by name from list
@@ -29,7 +30,8 @@ func getSafeByName(handler *SafeHandler, name string) *models.SafeFile {
 }
 
 func TestListSafes_Handler(t *testing.T) {
-	service := service.NewSafeService("../../testdata")
+	tmpDir := testutil.SetupTestDataDir(t)
+	service := service.NewSafeService(tmpDir)
 	handler := NewSafeHandler(service)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/safes", nil)
@@ -64,7 +66,8 @@ func TestListSafes_Handler(t *testing.T) {
 }
 
 func TestListSafes_WrongMethod(t *testing.T) {
-	service := service.NewSafeService("../../testdata")
+	tmpDir := testutil.SetupTestDataDir(t)
+	service := service.NewSafeService(tmpDir)
 	handler := NewSafeHandler(service)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/safes", nil)
@@ -78,7 +81,8 @@ func TestListSafes_WrongMethod(t *testing.T) {
 }
 
 func TestUnlockSafe_Success(t *testing.T) {
-	service := service.NewSafeService("../../testdata")
+	tmpDir := testutil.SetupTestDataDir(t)
+	service := service.NewSafeService(tmpDir)
 	handler := NewSafeHandler(service)
 
 	// Get safe info first
@@ -111,7 +115,8 @@ func TestUnlockSafe_Success(t *testing.T) {
 }
 
 func TestUnlockSafe_WrongPassword(t *testing.T) {
-	service := service.NewSafeService("../../testdata")
+	tmpDir := testutil.SetupTestDataDir(t)
+	service := service.NewSafeService(tmpDir)
 	handler := NewSafeHandler(service)
 
 	safe := getSafeByName(handler, "simple.psafe3")
@@ -134,7 +139,8 @@ func TestUnlockSafe_WrongPassword(t *testing.T) {
 }
 
 func TestUnlockSafe_MissingPassword(t *testing.T) {
-	service := service.NewSafeService("../../testdata")
+	tmpDir := testutil.SetupTestDataDir(t)
+	service := service.NewSafeService(tmpDir)
 	handler := NewSafeHandler(service)
 
 	safe := getSafeByName(handler, "simple.psafe3")
@@ -157,7 +163,8 @@ func TestUnlockSafe_MissingPassword(t *testing.T) {
 }
 
 func TestUnlockSafe_NonexistentID(t *testing.T) {
-	service := service.NewSafeService("../../testdata")
+	tmpDir := testutil.SetupTestDataDir(t)
+	service := service.NewSafeService(tmpDir)
 	handler := NewSafeHandler(service)
 
 	reqBody := models.UnlockRequest{Password: "password"}
@@ -175,7 +182,8 @@ func TestUnlockSafe_NonexistentID(t *testing.T) {
 }
 
 func TestUnlockSafe_InvalidJSON(t *testing.T) {
-	service := service.NewSafeService("../../testdata")
+	tmpDir := testutil.SetupTestDataDir(t)
+	service := service.NewSafeService(tmpDir)
 	handler := NewSafeHandler(service)
 
 	safe := getSafeByName(handler, "simple.psafe3")
@@ -195,7 +203,8 @@ func TestUnlockSafe_InvalidJSON(t *testing.T) {
 }
 
 func TestGetEntryPassword_Success(t *testing.T) {
-	service := service.NewSafeService("../../testdata")
+	tmpDir := testutil.SetupTestDataDir(t)
+	service := service.NewSafeService(tmpDir)
 	handler := NewSafeHandler(service)
 
 	safe := getSafeByName(handler, "simple.psafe3")
@@ -230,7 +239,8 @@ func TestGetEntryPassword_Success(t *testing.T) {
 }
 
 func TestGetEntryPassword_WrongUUID(t *testing.T) {
-	service := service.NewSafeService("../../testdata")
+	tmpDir := testutil.SetupTestDataDir(t)
+	service := service.NewSafeService(tmpDir)
 	handler := NewSafeHandler(service)
 
 	safe := getSafeByName(handler, "simple.psafe3")
@@ -256,7 +266,8 @@ func TestGetEntryPassword_WrongUUID(t *testing.T) {
 }
 
 func TestGetEntryPassword_MissingFields(t *testing.T) {
-	service := service.NewSafeService("../../testdata")
+	tmpDir := testutil.SetupTestDataDir(t)
+	service := service.NewSafeService(tmpDir)
 	handler := NewSafeHandler(service)
 
 	safe := getSafeByName(handler, "simple.psafe3")
@@ -282,7 +293,8 @@ func TestGetEntryPassword_MissingFields(t *testing.T) {
 }
 
 func TestGetEntryPassword_SpecialCharacters(t *testing.T) {
-	service := service.NewSafeService("../../testdata")
+	tmpDir := testutil.SetupTestDataDir(t)
+	service := service.NewSafeService(tmpDir)
 	handler := NewSafeHandler(service)
 
 	safe := getSafeByName(handler, "three.psafe3")

@@ -18,11 +18,9 @@ type ConnectionStatus struct {
 	AccountEmail string
 }
 
-// RootSettings represents {safesDirectory}/settings.json
-type RootSettings struct {
-	BaseURL string `json:"baseUrl"` // e.g., "http://localhost:8080"
-}
-
-// ProviderFactory creates a provider from its settings.json
-// baseURL comes from root settings, used to construct callback URL
-type ProviderFactory func(providerDir string, baseURL string, settingsJSON []byte) (SyncableSafesProvider, error)
+// ProviderFactory creates a provider instance
+// providerID: unique identifier (e.g., "onedrive")
+// dataDir: base data directory (provider creates its subfolder)
+// baseURL: from settings.json, used to construct callback URL
+// providerConfig: provider-specific config from settings.json providers map
+type ProviderFactory func(providerID string, dataDir string, baseURL string, providerConfig map[string]any) (SyncableSafesProvider, error)

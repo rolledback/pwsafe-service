@@ -1,11 +1,9 @@
 package provider
 
 import (
-	"encoding/json"
-	"fmt"
 	"log"
-	"os"
-	"path/filepath"
+
+	"github.com/rolledback/pwsafe-service/backend/internal/config"
 )
 
 // Registry manages provider discovery and creation
@@ -25,66 +23,26 @@ func (r *Registry) Register(providerID string, factory ProviderFactory) {
 	r.factories[providerID] = factory
 }
 
-// Discover scans safesDir for valid provider configs and creates providers.
+// Discover creates providers based on the settings.json providers map.
 // Returns map of providerID -> SyncableSafesProvider for successfully created providers.
-func (r *Registry) Discover(safesDir string) (map[string]SyncableSafesProvider, error) {
-	// Step 1: Read root settings.json for baseURL
-	rootSettingsPath := filepath.Join(safesDir, "settings.json")
-	rootData, err := os.ReadFile(rootSettingsPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("settings.json not found in %s: baseUrl is required", safesDir)
-		}
-		return nil, fmt.Errorf("failed to read settings.json: %w", err)
-	}
-
-	var rootSettings RootSettings
-	if err := json.Unmarshal(rootData, &rootSettings); err != nil {
-		return nil, fmt.Errorf("invalid settings.json: %w", err)
-	}
-
-	if rootSettings.BaseURL == "" {
-		return nil, fmt.Errorf("baseUrl is required in settings.json")
-	}
-
-	// Step 2: Scan for provider subdirectories
+func (r *Registry) Discover(settings *config.Settings, dataDir string) (map[string]SyncableSafesProvider, error) {
 	providers := make(map[string]SyncableSafesProvider)
 
-	entries, err := os.ReadDir(safesDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read safes directory: %w", err)
+	if settings.Providers == nil {
+		log.Printf("No providers configured in settings.json")
+		return providers, nil
 	}
 
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
-		providerID := entry.Name()
-
+	for providerID, providerConfig := range settings.Providers {
 		// Check if we have a factory for this provider
 		factory, ok := r.factories[providerID]
 		if !ok {
-			// Unknown provider folder - ignore it
+			log.Printf("Warning: unknown provider '%s' in settings.json - skipping", providerID)
 			continue
 		}
 
-		// Check for settings.json in provider folder
-		providerDir := filepath.Join(safesDir, providerID)
-		settingsPath := filepath.Join(providerDir, "settings.json")
-
-		settingsData, err := os.ReadFile(settingsPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				// No settings.json - skip this provider silently
-				continue
-			}
-			log.Printf("Warning: failed to read %s: %v", settingsPath, err)
-			continue
-		}
-
-		// Try to create the provider
-		provider, err := factory(providerDir, rootSettings.BaseURL, settingsData)
+		// Create the provider
+		provider, err := factory(providerID, dataDir, settings.BaseURL, providerConfig)
 		if err != nil {
 			log.Printf("Warning: failed to create %s provider: %v", providerID, err)
 			continue

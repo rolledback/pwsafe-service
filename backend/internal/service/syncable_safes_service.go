@@ -20,8 +20,8 @@ const defaultSyncInterval = 15 * time.Minute
 // SyncableSafesService orchestrates sync for ANY provider.
 // All sync logic lives here - providers only implement primitives.
 type SyncableSafesService struct {
-	safesDirectory string
-	provider       provider.SyncableSafesProvider
+	dataDir  string
+	provider provider.SyncableSafesProvider
 
 	syncMutex      sync.RWMutex
 	nextSyncMutex  sync.RWMutex
@@ -35,17 +35,17 @@ type SyncableSafesService struct {
 // NewSyncableSafesService creates a sync service for a single provider
 func NewSyncableSafesService(
 	ctx context.Context,
-	safesDirectory string,
+	dataDir string,
 	p provider.SyncableSafesProvider,
 ) *SyncableSafesService {
 	ctx, cancel := context.WithCancel(ctx)
 	svc := &SyncableSafesService{
-		safesDirectory: safesDirectory,
-		provider:       p,
-		syncInterval:   defaultSyncInterval,
-		nextSyncAt:     time.Now().Add(defaultSyncInterval),
-		ctx:            ctx,
-		cancel:         cancel,
+		dataDir:      dataDir,
+		provider:     p,
+		syncInterval: defaultSyncInterval,
+		nextSyncAt:   time.Now().Add(defaultSyncInterval),
+		ctx:          ctx,
+		cancel:       cancel,
 	}
 	go svc.periodicSync()
 	return svc
@@ -248,7 +248,7 @@ func (s *SyncableSafesService) tryPeriodicSync() {
 }
 
 func (s *SyncableSafesService) providerDir() string {
-	return filepath.Join(s.safesDirectory, s.provider.ID())
+	return filepath.Join(s.dataDir, s.provider.ID())
 }
 
 func (s *SyncableSafesService) configPath() string {

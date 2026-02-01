@@ -2,12 +2,11 @@ services:
   pwsafe:
     build: .
     ports:
+      # Change first number to use a different host port
       - "8080:8080"
     volumes:
-      - ./safes:/safes
-    environment:
-      - PWSAFE_DIRECTORY=/safes
-      - PWSAFE_PORT=8080
-      - PWSAFE_HOST=0.0.0.0
-      - PWSAFE_STATIC_DIR=/app/static
+      # User-provided data
+      - /opt/pwsafe/config:/config:ro
+      # Service-managed data
+      - /opt/pwsafe/data:/data
     restart: unless-stopped

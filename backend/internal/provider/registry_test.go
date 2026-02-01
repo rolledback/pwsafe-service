@@ -2,17 +2,17 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
-	"os"
-	"path/filepath"
+	"errors"
 	"testing"
+
+	"github.com/rolledback/pwsafe-service/backend/internal/config"
 )
 
 // mockFactory creates a simple mock provider for testing
-func mockFactory(providerDir, baseURL string, settingsJSON []byte) (SyncableSafesProvider, error) {
+func mockFactory(providerID string, dataDir string, baseURL string, providerConfig map[string]any) (SyncableSafesProvider, error) {
 	return &mockProvider{
-		id:          filepath.Base(providerDir),
-		displayName: "Mock " + filepath.Base(providerDir),
+		id:          providerID,
+		displayName: "Mock " + providerID,
 		baseURL:     baseURL,
 	}, nil
 }
@@ -41,26 +41,17 @@ func (m *mockProvider) DownloadFile(ctx context.Context, fileID string) (*Downlo
 func TestRegistry_Discover_ValidSettings(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Create root settings.json
-	rootSettings := `{"baseUrl": "http://localhost:8080"}`
-	if err := os.WriteFile(filepath.Join(tmpDir, "settings.json"), []byte(rootSettings), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Create provider directory with settings
-	providerDir := filepath.Join(tmpDir, "testprovider")
-	if err := os.MkdirAll(providerDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	providerSettings := `{"clientId": "test-client"}`
-	if err := os.WriteFile(filepath.Join(providerDir, "settings.json"), []byte(providerSettings), 0644); err != nil {
-		t.Fatal(err)
+	settings := &config.Settings{
+		BaseURL: "http://localhost:8080",
+		Providers: map[string]map[string]any{
+			"testprovider": {"clientId": "test-client"},
+		},
 	}
 
 	registry := NewRegistry()
 	registry.Register("testprovider", mockFactory)
 
-	providers, err := registry.Discover(tmpDir)
+	providers, err := registry.Discover(settings, tmpDir)
 	if err != nil {
 		t.Fatalf("Discover failed: %v", err)
 	}
@@ -74,144 +65,94 @@ func TestRegistry_Discover_ValidSettings(t *testing.T) {
 	}
 }
 
-func TestRegistry_Discover_MissingRootSettings(t *testing.T) {
+func TestRegistry_Discover_NoProviders(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// No root settings.json
-
-	registry := NewRegistry()
-	registry.Register("testprovider", mockFactory)
-
-	_, err := registry.Discover(tmpDir)
-	if err == nil {
-		t.Error("Expected error when root settings.json is missing")
-	}
-}
-
-func TestRegistry_Discover_MissingProviderSettings(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Create root settings.json
-	rootSettings := `{"baseUrl": "http://localhost:8080"}`
-	if err := os.WriteFile(filepath.Join(tmpDir, "settings.json"), []byte(rootSettings), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Create provider directory WITHOUT settings
-	providerDir := filepath.Join(tmpDir, "testprovider")
-	if err := os.MkdirAll(providerDir, 0755); err != nil {
-		t.Fatal(err)
+	settings := &config.Settings{
+		BaseURL:   "http://localhost:8080",
+		Providers: nil,
 	}
 
 	registry := NewRegistry()
 	registry.Register("testprovider", mockFactory)
 
-	providers, err := registry.Discover(tmpDir)
+	providers, err := registry.Discover(settings, tmpDir)
 	if err != nil {
 		t.Fatalf("Discover should not fail: %v", err)
 	}
 
 	if len(providers) != 0 {
-		t.Errorf("Expected 0 providers (skipped due to missing settings), got %d", len(providers))
+		t.Errorf("Expected 0 providers (no providers configured), got %d", len(providers))
 	}
 }
 
-func TestRegistry_Discover_InvalidProviderSettings(t *testing.T) {
+func TestRegistry_Discover_FactoryError(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Create root settings.json
-	rootSettings := `{"baseUrl": "http://localhost:8080"}`
-	if err := os.WriteFile(filepath.Join(tmpDir, "settings.json"), []byte(rootSettings), 0644); err != nil {
-		t.Fatal(err)
+	settings := &config.Settings{
+		BaseURL: "http://localhost:8080",
+		Providers: map[string]map[string]any{
+			"testprovider": {"clientId": "test-client"},
+		},
 	}
 
-	// Create provider directory with invalid JSON
-	providerDir := filepath.Join(tmpDir, "testprovider")
-	if err := os.MkdirAll(providerDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(providerDir, "settings.json"), []byte("not valid json"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Use a factory that validates JSON
-	validatingFactory := func(providerDir, baseURL string, settingsJSON []byte) (SyncableSafesProvider, error) {
-		var settings map[string]interface{}
-		if err := json.Unmarshal(settingsJSON, &settings); err != nil {
-			return nil, err
-		}
-		return mockFactory(providerDir, baseURL, settingsJSON)
+	// Use a factory that returns an error
+	failingFactory := func(providerID string, dataDir string, baseURL string, providerConfig map[string]any) (SyncableSafesProvider, error) {
+		return nil, errors.New("factory error")
 	}
 
 	registry := NewRegistry()
-	registry.Register("testprovider", validatingFactory)
+	registry.Register("testprovider", failingFactory)
 
-	providers, err := registry.Discover(tmpDir)
+	providers, err := registry.Discover(settings, tmpDir)
 	if err != nil {
-		t.Fatalf("Discover should not fail on invalid provider settings: %v", err)
+		t.Fatalf("Discover should not fail on factory error: %v", err)
 	}
 
 	if len(providers) != 0 {
-		t.Errorf("Expected 0 providers (skipped due to invalid settings), got %d", len(providers))
+		t.Errorf("Expected 0 providers (skipped due to factory error), got %d", len(providers))
 	}
 }
 
-func TestRegistry_Discover_UnknownFolder(t *testing.T) {
+func TestRegistry_Discover_UnknownProvider(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Create root settings.json
-	rootSettings := `{"baseUrl": "http://localhost:8080"}`
-	if err := os.WriteFile(filepath.Join(tmpDir, "settings.json"), []byte(rootSettings), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Create unknown provider directory with settings
-	unknownDir := filepath.Join(tmpDir, "unknownprovider")
-	if err := os.MkdirAll(unknownDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(unknownDir, "settings.json"), []byte(`{}`), 0644); err != nil {
-		t.Fatal(err)
+	settings := &config.Settings{
+		BaseURL: "http://localhost:8080",
+		Providers: map[string]map[string]any{
+			"unknownprovider": {},
+		},
 	}
 
 	registry := NewRegistry()
 	// Don't register unknownprovider
 
-	providers, err := registry.Discover(tmpDir)
+	providers, err := registry.Discover(settings, tmpDir)
 	if err != nil {
 		t.Fatalf("Discover should not fail: %v", err)
 	}
 
 	if len(providers) != 0 {
-		t.Errorf("Expected 0 providers (unknown folder ignored), got %d", len(providers))
+		t.Errorf("Expected 0 providers (unknown provider ignored), got %d", len(providers))
 	}
 }
 
 func TestRegistry_Discover_MultipleProviders(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Create root settings.json
-	rootSettings := `{"baseUrl": "http://localhost:8080"}`
-	if err := os.WriteFile(filepath.Join(tmpDir, "settings.json"), []byte(rootSettings), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Create two provider directories
-	for _, name := range []string{"provider1", "provider2"} {
-		dir := filepath.Join(tmpDir, name)
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{}`), 0644); err != nil {
-			t.Fatal(err)
-		}
+	settings := &config.Settings{
+		BaseURL: "http://localhost:8080",
+		Providers: map[string]map[string]any{
+			"provider1": {},
+			"provider2": {},
+		},
 	}
 
 	registry := NewRegistry()
 	registry.Register("provider1", mockFactory)
 	registry.Register("provider2", mockFactory)
 
-	providers, err := registry.Discover(tmpDir)
+	providers, err := registry.Discover(settings, tmpDir)
 	if err != nil {
 		t.Fatalf("Discover failed: %v", err)
 	}
@@ -226,31 +167,23 @@ func TestRegistry_Discover_BaseURLPassedToFactory(t *testing.T) {
 
 	expectedBaseURL := "http://example.com:9000"
 
-	// Create root settings.json with specific baseUrl
-	rootSettings := `{"baseUrl": "` + expectedBaseURL + `"}`
-	if err := os.WriteFile(filepath.Join(tmpDir, "settings.json"), []byte(rootSettings), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Create provider directory
-	providerDir := filepath.Join(tmpDir, "testprovider")
-	if err := os.MkdirAll(providerDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(providerDir, "settings.json"), []byte(`{}`), 0644); err != nil {
-		t.Fatal(err)
+	settings := &config.Settings{
+		BaseURL: expectedBaseURL,
+		Providers: map[string]map[string]any{
+			"testprovider": {},
+		},
 	}
 
 	var capturedBaseURL string
-	capturingFactory := func(providerDir, baseURL string, settingsJSON []byte) (SyncableSafesProvider, error) {
+	capturingFactory := func(providerID string, dataDir string, baseURL string, providerConfig map[string]any) (SyncableSafesProvider, error) {
 		capturedBaseURL = baseURL
-		return mockFactory(providerDir, baseURL, settingsJSON)
+		return mockFactory(providerID, dataDir, baseURL, providerConfig)
 	}
 
 	registry := NewRegistry()
 	registry.Register("testprovider", capturingFactory)
 
-	_, err := registry.Discover(tmpDir)
+	_, err := registry.Discover(settings, tmpDir)
 	if err != nil {
 		t.Fatalf("Discover failed: %v", err)
 	}

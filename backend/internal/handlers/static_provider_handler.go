@@ -15,13 +15,19 @@ import (
 
 // StaticProviderHandler handles HTTP requests for static safe operations (upload, delete)
 type StaticProviderHandler struct {
-	safesDirectory string
+	staticDir string // data/static directory
 }
 
 // NewStaticProviderHandler creates a new static provider handler
-func NewStaticProviderHandler(safesDirectory string) *StaticProviderHandler {
+// dataDir is the base data directory; static files go in dataDir/static
+func NewStaticProviderHandler(dataDir string) *StaticProviderHandler {
+	staticDir := filepath.Join(dataDir, "static")
+	// Auto-create static directory
+	if err := os.MkdirAll(staticDir, 0700); err != nil {
+		log.Printf("Warning: failed to create static directory: %v", err)
+	}
 	return &StaticProviderHandler{
-		safesDirectory: safesDirectory,
+		staticDir: staticDir,
 	}
 }
 
@@ -90,7 +96,7 @@ func (h *StaticProviderHandler) uploadFile(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	destPath := filepath.Join(h.safesDirectory, filename)
+	destPath := filepath.Join(h.staticDir, filename)
 
 	// Check if file exists
 	if _, err := os.Stat(destPath); err == nil {
@@ -144,22 +150,22 @@ func (h *StaticProviderHandler) deleteFile(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	destPath := filepath.Join(h.safesDirectory, filename)
+	destPath := filepath.Join(h.staticDir, filename)
 
-	// Security: ensure the resolved path is still within safesDirectory
+	// Security: ensure the resolved path is still within staticDir
 	absPath, err := filepath.Abs(destPath)
 	if err != nil {
 		h.respondError(w, "Invalid filename", http.StatusBadRequest)
 		return
 	}
 
-	absSafesDir, err := filepath.Abs(h.safesDirectory)
+	absStaticDir, err := filepath.Abs(h.staticDir)
 	if err != nil {
 		h.respondError(w, "Server configuration error", http.StatusInternalServerError)
 		return
 	}
 
-	if !strings.HasPrefix(absPath, absSafesDir+string(filepath.Separator)) {
+	if !strings.HasPrefix(absPath, absStaticDir+string(filepath.Separator)) {
 		h.respondError(w, "Invalid filename", http.StatusBadRequest)
 		return
 	}

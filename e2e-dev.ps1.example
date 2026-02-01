@@ -2,8 +2,11 @@
 $ErrorActionPreference = "Stop"
 
 # Configuration - Update these values for your local environment (paths should be relative to backend/)
-$SAFES_DIR = "./testdata"         # Path to .psafe3 files
-$STATIC_DIR = "../frontend/dist"  # Path to frontend build output
+$CONFIG_DIR = "/some/folder/config" # Path to dev config directory (contains settings.json)
+$DATA_DIR = "/some/folder/data"     # Path to dev data directory (contains static/ and provider folders)
+
+# This value usually does not need to be changed
+$STATIC_DIR = "../frontend/dist"    # Path to frontend build output
 
 Write-Host "Building frontend..."
 Push-Location frontend
@@ -18,7 +21,8 @@ Write-Host "Stopping any running instance..."
 Get-Process -Name "pwsafe-service" -ErrorAction SilentlyContinue | Stop-Process -Force
 
 Write-Host "Starting pwsafe-service..."
-$env:PWSAFE_DIRECTORY = $SAFES_DIR
+$env:PWSAFE_CONFIG_DIR = $CONFIG_DIR
+$env:PWSAFE_DATA_DIR = $DATA_DIR
 $env:PWSAFE_STATIC_DIR = $STATIC_DIR
 try {
     & .\pwsafe-service.exe

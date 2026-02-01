@@ -14,6 +14,7 @@ import (
 	"github.com/rolledback/pwsafe-service/backend/internal/provider"
 	"github.com/rolledback/pwsafe-service/backend/internal/provider/onedrive"
 	"github.com/rolledback/pwsafe-service/backend/internal/service"
+
 	"golang.org/x/time/rate"
 )
 
@@ -21,18 +22,21 @@ func main() {
 	cfg := config.Load()
 
 	log.Printf("pwsafe-service - Password Safe Web Service")
-	log.Printf("Safes Directory: %s", cfg.SafesDirectory)
+	log.Printf("Config Directory: %s", cfg.ConfigDirectory)
+	log.Printf("Data Directory: %s", cfg.DataDirectory)
 	log.Printf("Server: %s:%s", cfg.ServerHost, cfg.ServerPort)
 
-	staticDir := os.Getenv("PWSAFE_STATIC_DIR")
-	if staticDir == "" {
-		staticDir = "./static"
+	// Load settings from config directory
+	settings, err := config.LoadSettings(cfg.ConfigDirectory)
+	if err != nil {
+		log.Fatalf("Failed to load settings: %v", err)
 	}
+	log.Printf("Base URL: %s", settings.BaseURL)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	safeService := service.NewSafeService(cfg.SafesDirectory)
+	safeService := service.NewSafeService(cfg.DataDirectory)
 	safeHandler := handlers.NewSafeHandler(safeService)
 
 	// Prime the safe ID cache on startup
@@ -44,8 +48,8 @@ func main() {
 	registry := provider.NewRegistry()
 	registry.Register("onedrive", onedrive.Factory)
 
-	// Discover providers from safes directory
-	providers, err := registry.Discover(cfg.SafesDirectory)
+	// Discover providers from settings
+	providers, err := registry.Discover(settings, cfg.DataDirectory)
 	if err != nil {
 		log.Fatalf("Failed to discover providers: %v", err)
 	}
@@ -53,7 +57,7 @@ func main() {
 	// Create SyncableSafesService for each discovered provider
 	services := make(map[string]*service.SyncableSafesService)
 	for id, p := range providers {
-		svc := service.NewSyncableSafesService(ctx, cfg.SafesDirectory, p)
+		svc := service.NewSyncableSafesService(ctx, cfg.DataDirectory, p)
 		services[id] = svc
 		defer svc.Stop()
 	}
@@ -64,7 +68,7 @@ func main() {
 	providersHandler := handlers.NewProvidersHandler(services, safeService)
 
 	// Create static provider handler (for upload/delete of static safes)
-	staticProviderHandler := handlers.NewStaticProviderHandler(cfg.SafesDirectory)
+	staticProviderHandler := handlers.NewStaticProviderHandler(cfg.DataDirectory)
 
 	rateLimiter := middleware.NewRateLimiter(rate.Limit(5), 5)
 
@@ -94,17 +98,17 @@ func main() {
 	// Serve static files with SPA fallback
 	http.HandleFunc("/web/", func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path[4:] // Remove "/web" prefix
-		fullPath := staticDir + path
-		
+		fullPath := cfg.StaticDir + path
+
 		// Check if file exists
 		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
 			// File doesn't exist, serve index.html for SPA routing
-			http.ServeFile(w, r, staticDir+"/index.html")
+			http.ServeFile(w, r, cfg.StaticDir+"/index.html")
 			return
 		}
-		
+
 		// File exists, serve it
-		fs := http.FileServer(http.Dir(staticDir))
+		fs := http.FileServer(http.Dir(cfg.StaticDir))
 		http.StripPrefix("/web", fs).ServeHTTP(w, r)
 	})
 

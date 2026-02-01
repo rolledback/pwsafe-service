@@ -31,14 +31,11 @@ COPY --from=backend-builder /backend/pwsafe-service .
 # Copy frontend static files
 COPY --from=frontend-builder /frontend/dist ./static
 
-# Create directory for safes (can be mounted as volume)
-RUN mkdir -p /safes
-
 # Environment variables with defaults
-ENV PWSAFE_DIRECTORY=/safes
-ENV PWSAFE_PORT=8080
-ENV PWSAFE_HOST=0.0.0.0
+ENV PWSAFE_CONFIG_DIR=/config
+ENV PWSAFE_DATA_DIR=/data
 ENV PWSAFE_STATIC_DIR=/app/static
+ENV PWSAFE_PORT=8080
 
 # Default port exposure
 EXPOSE 8080
