@@ -12,6 +12,7 @@ import (
 	"github.com/rolledback/pwsafe-service/backend/internal/handlers"
 	"github.com/rolledback/pwsafe-service/backend/internal/middleware"
 	"github.com/rolledback/pwsafe-service/backend/internal/provider"
+	"github.com/rolledback/pwsafe-service/backend/internal/provider/mock"
 	"github.com/rolledback/pwsafe-service/backend/internal/provider/onedrive"
 	"github.com/rolledback/pwsafe-service/backend/internal/service"
 
@@ -47,6 +48,7 @@ func main() {
 	// Create provider registry and register factories
 	registry := provider.NewRegistry()
 	registry.Register("onedrive", onedrive.Factory)
+	registry.Register("mock", mock.Factory)
 
 	// Discover providers from settings
 	providers, err := registry.Discover(settings, cfg.DataDirectory)

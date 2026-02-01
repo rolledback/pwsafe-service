@@ -36,4 +36,12 @@ For detailed instructions on developing each component:
 
 ### Working with Providers
 
-To develop existing providers or add new ones, see [Providers](providers.md) as a primer. When changing or adding new providers, you must update that documentation.
+To develop existing providers or add new ones, see [Providers](providers.md) as a primer. When changing or adding new providers, you must update that documentation. If you are unable to setup any of the currently supported providers, you can enable a mock provider by updating `"providers"` in your `settings.json` to include:
+
+```json
+{
+  "mock": {}
+}
+```
+
+The mock provider loads the safes from the `backend/testdata/` directory. Therefore the mock provider does not work for a deployed instance of the service.
