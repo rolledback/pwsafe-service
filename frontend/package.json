@@ -5,9 +5,7 @@
   "type": "module",
   "scripts": {
     "preinstall": "git config core.hooksPath .githooks",
-    "dev": "node build.js --watch & serve dist -l 3000 --basepath /web",
     "build": "tsc && node build.js --production",
-    "start": "serve dist -l 3000 --basepath /web",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "format:fix": "prettier --write . --log-level warn"
@@ -17,8 +15,7 @@
   "dependencies": {
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
-    "react-router-dom": "^7.11.0",
-    "serve": "^14.2.5"
+    "react-router-dom": "^7.11.0"
   },
   "devDependencies": {
     "@types/react": "^19.2.7",
