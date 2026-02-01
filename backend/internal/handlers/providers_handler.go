@@ -20,13 +20,15 @@ type ProviderInfo struct {
 
 // ProvidersHandler handles HTTP requests for all providers
 type ProvidersHandler struct {
-	services map[string]*service.SyncableSafesService
+	services    map[string]*service.SyncableSafesService
+	safeService *service.SafeService
 }
 
 // NewProvidersHandler creates a new providers handler
-func NewProvidersHandler(services map[string]*service.SyncableSafesService) *ProvidersHandler {
+func NewProvidersHandler(services map[string]*service.SyncableSafesService, safeService *service.SafeService) *ProvidersHandler {
 	return &ProvidersHandler{
-		services: services,
+		services:    services,
+		safeService: safeService,
 	}
 }
 
@@ -240,6 +242,11 @@ func (h *ProvidersHandler) sync(w http.ResponseWriter, r *http.Request, svc *ser
 		log.Printf("Error syncing %s files: %v", providerID, err)
 		h.respondError(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// Refresh the safe ID cache after sync
+	if err := h.safeService.RefreshCache(); err != nil {
+		log.Printf("Warning: failed to refresh safe ID cache after sync: %v", err)
 	}
 
 	h.respondJSON(w, map[string]interface{}{"results": results}, http.StatusOK)

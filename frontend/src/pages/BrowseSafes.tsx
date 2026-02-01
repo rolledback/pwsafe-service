@@ -32,9 +32,10 @@ function BrowseSafes() {
     fetchData();
   }, []);
 
-  const handleSafeClick = (safePath: string) => {
-    const encodedPath = encodeURIComponent(safePath);
-    navigate(`/unlock/${encodedPath}`);
+  const handleSafeClick = (safe: SafeFile) => {
+    navigate(`/unlock/${safe.id}`, {
+      state: { safeName: safe.name },
+    });
   };
 
   const formatDate = (dateString: string) => {
@@ -82,13 +83,13 @@ function BrowseSafes() {
           const badge = getProviderBadge(safe.provider);
           return (
             <ItemRow
-              key={safe.path}
+              key={safe.id}
               icon="🔒"
               name={safe.name}
               metadata={`Modified ${formatDate(safe.lastModified)}`}
               sourceBadge={badge?.name}
               sourceBadgeColor={badge?.color}
-              onClick={() => handleSafeClick(safe.path)}
+              onClick={() => handleSafeClick(safe)}
             />
           );
         })}

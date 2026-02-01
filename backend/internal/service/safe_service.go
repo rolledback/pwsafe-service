@@ -1,23 +1,60 @@
 package service
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/rolledback/pwsafe-service/backend/internal/models"
 	"github.com/tkuhlman/gopwsafe/pwsafe"
 )
 
+// SafeRef holds the provider and path for a safe, used in ID cache lookups
+type SafeRef struct {
+	Provider string
+	Path     string
+}
+
 type SafeService struct {
 	safesDirectory string
+	idCache        map[string]SafeRef // id → {provider, path}
+	cacheMutex     sync.RWMutex
 }
 
 func NewSafeService(safesDirectory string) *SafeService {
 	return &SafeService{
 		safesDirectory: safesDirectory,
+		idCache:        make(map[string]SafeRef),
 	}
+}
+
+// ComputeID generates an 8-character hex ID from SHA256 of provider/relativePath
+func (s *SafeService) ComputeID(provider, relativePath string) string {
+	input := provider + "/" + relativePath
+	hash := sha256.Sum256([]byte(input))
+	return hex.EncodeToString(hash[:4]) // 4 bytes = 8 hex chars
+}
+
+// ResolvePath looks up a safe by ID and returns its provider and path
+func (s *SafeService) ResolvePath(id string) (SafeRef, error) {
+	s.cacheMutex.RLock()
+	defer s.cacheMutex.RUnlock()
+
+	ref, exists := s.idCache[id]
+	if !exists {
+		return SafeRef{}, fmt.Errorf("safe not found: %s", id)
+	}
+	return ref, nil
+}
+
+// RefreshCache rebuilds the ID cache by listing all safes
+func (s *SafeService) RefreshCache() error {
+	_, err := s.ListSafes()
+	return err
 }
 
 func (s *SafeService) ListSafes() ([]models.SafeFile, error) {
@@ -49,6 +86,23 @@ func (s *SafeService) ListSafes() ([]models.SafeFile, error) {
 			safes = append(safes, providerSafes...)
 		}
 	}
+
+	// Rebuild the ID cache
+	s.cacheMutex.Lock()
+	s.idCache = make(map[string]SafeRef)
+	for i := range safes {
+		safe := &safes[i]
+		// Compute relative path for ID: strip "/safes/" prefix
+		relPath := strings.TrimPrefix(safe.Path, "/"+filepath.Base(s.safesDirectory)+"/")
+		if safe.Provider == "static" {
+			// Static safes are at root, relPath is just the filename
+			relPath = safe.Name
+		}
+		id := s.ComputeID(safe.Provider, relPath)
+		safe.ID = id
+		s.idCache[id] = SafeRef{Provider: safe.Provider, Path: safe.Path}
+	}
+	s.cacheMutex.Unlock()
 
 	return safes, nil
 }

@@ -5,12 +5,28 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 
 	"github.com/rolledback/pwsafe-service/backend/internal/models"
 	"github.com/rolledback/pwsafe-service/backend/internal/service"
 )
+
+// Helper to get safe ID by name from list
+func getSafeByName(handler *SafeHandler, name string) *models.SafeFile {
+	req := httptest.NewRequest(http.MethodGet, "/api/safes", nil)
+	w := httptest.NewRecorder()
+	handler.ListSafes(w, req)
+
+	var safes []models.SafeFile
+	json.NewDecoder(w.Body).Decode(&safes)
+
+	for _, safe := range safes {
+		if safe.Name == name {
+			return &safe
+		}
+	}
+	return nil
+}
 
 func TestListSafes_Handler(t *testing.T) {
 	service := service.NewSafeService("../../testdata")
@@ -34,13 +50,15 @@ func TestListSafes_Handler(t *testing.T) {
 		t.Errorf("Expected at least 2 safes, got %d", len(safes))
 	}
 
-	// Verify source field is present
 	for _, safe := range safes {
 		if safe.Provider == "" {
-			t.Errorf("Expected source field to be set for safe %s", safe.Name)
+			t.Errorf("Expected provider field to be set for safe %s", safe.Name)
 		}
 		if safe.Path == "" {
 			t.Errorf("Expected path field to be set for safe %s", safe.Name)
+		}
+		if safe.ID == "" {
+			t.Errorf("Expected id field to be set for safe %s", safe.Name)
 		}
 	}
 }
@@ -63,12 +81,16 @@ func TestUnlockSafe_Success(t *testing.T) {
 	service := service.NewSafeService("../../testdata")
 	handler := NewSafeHandler(service)
 
+	// Get safe info first
+	safe := getSafeByName(handler, "simple.psafe3")
+	if safe == nil {
+		t.Fatal("Could not find simple.psafe3 in safes list")
+	}
+
 	reqBody := models.UnlockRequest{Password: "password"}
 	body, _ := json.Marshal(reqBody)
 
-	// URL-encode the path
-	encodedPath := url.PathEscape("/testdata/simple.psafe3")
-	req := httptest.NewRequest(http.MethodPost, "/api/safes/"+encodedPath+"/unlock", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/safes/"+safe.ID+"/unlock", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -92,11 +114,15 @@ func TestUnlockSafe_WrongPassword(t *testing.T) {
 	service := service.NewSafeService("../../testdata")
 	handler := NewSafeHandler(service)
 
+	safe := getSafeByName(handler, "simple.psafe3")
+	if safe == nil {
+		t.Fatal("Could not find simple.psafe3 in safes list")
+	}
+
 	reqBody := models.UnlockRequest{Password: "wrongpassword"}
 	body, _ := json.Marshal(reqBody)
 
-	encodedPath := url.PathEscape("/testdata/simple.psafe3")
-	req := httptest.NewRequest(http.MethodPost, "/api/safes/"+encodedPath+"/unlock", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/safes/"+safe.ID+"/unlock", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -111,11 +137,15 @@ func TestUnlockSafe_MissingPassword(t *testing.T) {
 	service := service.NewSafeService("../../testdata")
 	handler := NewSafeHandler(service)
 
+	safe := getSafeByName(handler, "simple.psafe3")
+	if safe == nil {
+		t.Fatal("Could not find simple.psafe3 in safes list")
+	}
+
 	reqBody := models.UnlockRequest{Password: ""}
 	body, _ := json.Marshal(reqBody)
 
-	encodedPath := url.PathEscape("/testdata/simple.psafe3")
-	req := httptest.NewRequest(http.MethodPost, "/api/safes/"+encodedPath+"/unlock", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/safes/"+safe.ID+"/unlock", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -126,15 +156,14 @@ func TestUnlockSafe_MissingPassword(t *testing.T) {
 	}
 }
 
-func TestUnlockSafe_NonexistentFile(t *testing.T) {
+func TestUnlockSafe_NonexistentID(t *testing.T) {
 	service := service.NewSafeService("../../testdata")
 	handler := NewSafeHandler(service)
 
 	reqBody := models.UnlockRequest{Password: "password"}
 	body, _ := json.Marshal(reqBody)
 
-	encodedPath := url.PathEscape("/testdata/nonexistent.psafe3")
-	req := httptest.NewRequest(http.MethodPost, "/api/safes/"+encodedPath+"/unlock", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/safes/nonexistent123/unlock", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -149,8 +178,12 @@ func TestUnlockSafe_InvalidJSON(t *testing.T) {
 	service := service.NewSafeService("../../testdata")
 	handler := NewSafeHandler(service)
 
-	encodedPath := url.PathEscape("/testdata/simple.psafe3")
-	req := httptest.NewRequest(http.MethodPost, "/api/safes/"+encodedPath+"/unlock", bytes.NewReader([]byte("invalid json")))
+	safe := getSafeByName(handler, "simple.psafe3")
+	if safe == nil {
+		t.Fatal("Could not find simple.psafe3 in safes list")
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/safes/"+safe.ID+"/unlock", bytes.NewReader([]byte("invalid json")))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -161,28 +194,14 @@ func TestUnlockSafe_InvalidJSON(t *testing.T) {
 	}
 }
 
-func TestUnlockSafe_DirectoryTraversal(t *testing.T) {
-	service := service.NewSafeService("../../testdata")
-	handler := NewSafeHandler(service)
-
-	reqBody := models.UnlockRequest{Password: "password"}
-	body, _ := json.Marshal(reqBody)
-
-	encodedPath := url.PathEscape("/testdata/../../../etc/passwd")
-	req := httptest.NewRequest(http.MethodPost, "/api/safes/"+encodedPath+"/unlock", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	handler.UnlockSafe(w, req)
-
-	if w.Code != http.StatusBadRequest && w.Code != http.StatusNotFound {
-		t.Errorf("Expected status 400 or 404 for directory traversal, got %d", w.Code)
-	}
-}
-
 func TestGetEntryPassword_Success(t *testing.T) {
 	service := service.NewSafeService("../../testdata")
 	handler := NewSafeHandler(service)
+
+	safe := getSafeByName(handler, "simple.psafe3")
+	if safe == nil {
+		t.Fatal("Could not find simple.psafe3 in safes list")
+	}
 
 	reqBody := models.EntryPasswordRequest{
 		Password:  "password",
@@ -190,8 +209,7 @@ func TestGetEntryPassword_Success(t *testing.T) {
 	}
 	body, _ := json.Marshal(reqBody)
 
-	encodedPath := url.PathEscape("/testdata/simple.psafe3")
-	req := httptest.NewRequest(http.MethodPost, "/api/safes/"+encodedPath+"/entry", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/safes/"+safe.ID+"/entry", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -215,14 +233,18 @@ func TestGetEntryPassword_WrongUUID(t *testing.T) {
 	service := service.NewSafeService("../../testdata")
 	handler := NewSafeHandler(service)
 
+	safe := getSafeByName(handler, "simple.psafe3")
+	if safe == nil {
+		t.Fatal("Could not find simple.psafe3 in safes list")
+	}
+
 	reqBody := models.EntryPasswordRequest{
 		Password:  "password",
 		EntryUUID: "00000000-0000-0000-0000-000000000000",
 	}
 	body, _ := json.Marshal(reqBody)
 
-	encodedPath := url.PathEscape("/testdata/simple.psafe3")
-	req := httptest.NewRequest(http.MethodPost, "/api/safes/"+encodedPath+"/entry", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/safes/"+safe.ID+"/entry", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -237,14 +259,18 @@ func TestGetEntryPassword_MissingFields(t *testing.T) {
 	service := service.NewSafeService("../../testdata")
 	handler := NewSafeHandler(service)
 
+	safe := getSafeByName(handler, "simple.psafe3")
+	if safe == nil {
+		t.Fatal("Could not find simple.psafe3 in safes list")
+	}
+
 	reqBody := models.EntryPasswordRequest{
 		Password:  "",
 		EntryUUID: "c4dcfb52-b944-f141-af96-b746f184afe2",
 	}
 	body, _ := json.Marshal(reqBody)
 
-	encodedPath := url.PathEscape("/testdata/simple.psafe3")
-	req := httptest.NewRequest(http.MethodPost, "/api/safes/"+encodedPath+"/entry", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/safes/"+safe.ID+"/entry", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -259,14 +285,18 @@ func TestGetEntryPassword_SpecialCharacters(t *testing.T) {
 	service := service.NewSafeService("../../testdata")
 	handler := NewSafeHandler(service)
 
+	safe := getSafeByName(handler, "three.psafe3")
+	if safe == nil {
+		t.Fatal("Could not find three.psafe3 in safes list")
+	}
+
 	reqBody := models.EntryPasswordRequest{
 		Password:  "three3#;",
 		EntryUUID: "6f1738b6-4a22-314a-8bbf-5c3507f0d489",
 	}
 	body, _ := json.Marshal(reqBody)
 
-	encodedPath := url.PathEscape("/testdata/three.psafe3")
-	req := httptest.NewRequest(http.MethodPost, "/api/safes/"+encodedPath+"/entry", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/safes/"+safe.ID+"/entry", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 

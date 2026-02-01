@@ -3,6 +3,7 @@ package models
 import "time"
 
 type SafeFile struct {
+	ID           string    `json:"id"`
 	Name         string    `json:"name"`
 	Path         string    `json:"path"`
 	LastModified time.Time `json:"lastModified"`

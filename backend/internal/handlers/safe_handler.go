@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/rolledback/pwsafe-service/backend/internal/models"
@@ -45,13 +44,22 @@ func (h *SafeHandler) UnlockSafe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	safePath := extractSafePath(r.URL.Path, "/api/safes/", "/unlock")
-	if safePath == "" {
-		h.respondError(w, "Invalid safe path", http.StatusBadRequest)
+	// Extract ID from URL: /api/safes/{id}/unlock
+	id := extractSafeID(r.URL.Path, "/api/safes/", "/unlock")
+	if id == "" {
+		h.respondError(w, "Invalid safe identifier", http.StatusBadRequest)
 		return
 	}
 
-	log.Printf("POST /api/safes/%s/unlock", safePath)
+	log.Printf("POST /api/safes/%s/unlock", id)
+
+	// Resolve ID to path
+	ref, err := h.safeService.ResolvePath(id)
+	if err != nil {
+		log.Printf("Error resolving safe ID %s: %v", id, err)
+		h.respondError(w, "Safe not found", http.StatusNotFound)
+		return
+	}
 
 	var req models.UnlockRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -64,9 +72,9 @@ func (h *SafeHandler) UnlockSafe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	structure, err := h.safeService.UnlockSafe(safePath, req.Password)
+	structure, err := h.safeService.UnlockSafe(ref.Path, req.Password)
 	if err != nil {
-		log.Printf("Error unlocking safe %s: %v", safePath, err)
+		log.Printf("Error unlocking safe %s: %v", ref.Path, err)
 		if strings.Contains(err.Error(), "not found") {
 			h.respondError(w, "Safe file not found", http.StatusNotFound)
 		} else if strings.Contains(err.Error(), "directory traversal") || strings.Contains(err.Error(), "invalid safe path") {
@@ -86,13 +94,22 @@ func (h *SafeHandler) GetEntryPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	safePath := extractSafePath(r.URL.Path, "/api/safes/", "/entry")
-	if safePath == "" {
-		h.respondError(w, "Invalid safe path", http.StatusBadRequest)
+	// Extract ID from URL: /api/safes/{id}/entry
+	id := extractSafeID(r.URL.Path, "/api/safes/", "/entry")
+	if id == "" {
+		h.respondError(w, "Invalid safe identifier", http.StatusBadRequest)
 		return
 	}
 
-	log.Printf("POST /api/safes/%s/entry", safePath)
+	log.Printf("POST /api/safes/%s/entry", id)
+
+	// Resolve ID to path
+	ref, err := h.safeService.ResolvePath(id)
+	if err != nil {
+		log.Printf("Error resolving safe ID %s: %v", id, err)
+		h.respondError(w, "Safe not found", http.StatusNotFound)
+		return
+	}
 
 	var req models.EntryPasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -105,9 +122,9 @@ func (h *SafeHandler) GetEntryPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	password, err := h.safeService.GetEntryPassword(safePath, req.Password, req.EntryUUID)
+	password, err := h.safeService.GetEntryPassword(ref.Path, req.Password, req.EntryUUID)
 	if err != nil {
-		log.Printf("Error getting entry password for %s in %s: %v", req.EntryUUID, safePath, err)
+		log.Printf("Error getting entry password for %s in %s: %v", req.EntryUUID, ref.Path, err)
 		if strings.Contains(err.Error(), "not found") {
 			h.respondError(w, err.Error(), http.StatusNotFound)
 		} else if strings.Contains(err.Error(), "directory traversal") || strings.Contains(err.Error(), "invalid safe path") {
@@ -134,17 +151,10 @@ func (h *SafeHandler) respondError(w http.ResponseWriter, message string, status
 	h.respondJSON(w, models.ErrorResponse{Error: message}, status)
 }
 
-// extractSafePath extracts and URL-decodes the safe path from the URL.
-// The path is expected to be URL-encoded (e.g., %2Fsafes%2Ffile.psafe3 for /safes/file.psafe3)
-func extractSafePath(urlPath, prefix, suffix string) string {
+// extractSafeID extracts the safe ID from URL path
+// URL format: {prefix}{id}{suffix}
+func extractSafeID(urlPath, prefix, suffix string) string {
 	path := strings.TrimPrefix(urlPath, prefix)
 	path = strings.TrimSuffix(path, suffix)
-	
-	// URL-decode the path
-	decodedPath, err := url.PathUnescape(path)
-	if err != nil {
-		return ""
-	}
-	
-	return decodedPath
+	return path
 }

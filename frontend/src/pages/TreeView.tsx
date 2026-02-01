@@ -5,7 +5,8 @@ import { api, SafeStructure, Group, Entry } from "../api/client";
 type LocationState = {
   structure: SafeStructure;
   password: string;
-  safePath: string;
+  id: string;
+  safeName: string;
 };
 
 type TreeItemProps = {
@@ -54,32 +55,29 @@ function TreeItem({ level, isGroup, isExpanded, name, icon, entry, onCopyPasswor
 }
 
 function TreeView() {
-  const { safePath: encodedSafePath } = useParams<{ safePath: string }>();
+  const { id: urlId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
   const [structure, setStructure] = useState<SafeStructure | null>(null);
   const [password, setPassword] = useState<string | null>(null);
-  const [safePath, setSafePath] = useState<string | null>(null);
+  const [id, setId] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState<string>("");
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
-
-  // Decode the URL-encoded path
-  const decodedSafePath = encodedSafePath ? decodeURIComponent(encodedSafePath) : "";
-  // Extract display name from path
-  const displayName = decodedSafePath.split("/").pop() || decodedSafePath;
 
   useEffect(() => {
     const state = location.state as LocationState | null;
 
-    if (!state || !state.structure || !state.password || state.safePath !== decodedSafePath) {
+    if (!state || !state.structure || !state.password || state.id !== urlId) {
       navigate("/");
       return;
     }
 
     setStructure(state.structure);
     setPassword(state.password);
-    setSafePath(state.safePath);
-  }, [decodedSafePath, navigate, location.state]);
+    setId(state.id);
+    setDisplayName(state.safeName || urlId || "Safe");
+  }, [urlId, navigate, location.state]);
 
   const getGroupPath = (groupName: string, parentPath: string = ""): string => {
     return parentPath ? `${parentPath}.${groupName}` : groupName;
@@ -98,14 +96,14 @@ function TreeView() {
   };
 
   const handleCopyPassword = async (entry: Entry) => {
-    if (!password || !safePath) {
+    if (!password || !id) {
       setCopyMessage("Error: Session expired");
       setTimeout(() => setCopyMessage(null), 3000);
       return;
     }
 
     try {
-      const entryPassword = await api.getEntryPassword(safePath, password, entry.uuid);
+      const entryPassword = await api.getEntryPassword(id, password, entry.uuid);
       await navigator.clipboard.writeText(entryPassword);
       setCopyMessage(`Copied password for ${entry.title}`);
       setTimeout(() => setCopyMessage(null), 3000);

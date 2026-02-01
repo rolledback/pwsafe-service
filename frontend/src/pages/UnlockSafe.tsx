@@ -1,23 +1,27 @@
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { FormEvent, useState } from "react";
 import { api } from "../api/client";
 
+type LocationState = {
+  safeName?: string;
+};
+
 function UnlockSafe() {
   const navigate = useNavigate();
-  const { safePath: encodedSafePath } = useParams<{ safePath: string }>();
+  const location = useLocation();
+  const { id } = useParams<{ id: string }>();
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isUnlocking, setIsUnlocking] = useState(false);
 
-  // Decode the URL-encoded path
-  const safePath = encodedSafePath ? decodeURIComponent(encodedSafePath) : "";
-  // Extract display name from path (e.g., "/safes/work.psafe3" -> "work.psafe3")
-  const displayName = safePath.split("/").pop() || safePath;
+  // Get display name from navigation state, or fall back to ID
+  const state = location.state as LocationState | null;
+  const displayName = state?.safeName || id || "Safe";
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
 
-    if (!safePath) {
+    if (!id) {
       setError("No safe selected");
       return;
     }
@@ -26,12 +30,13 @@ function UnlockSafe() {
     setError(null);
 
     try {
-      const structure = await api.unlockSafe(safePath, password);
-      navigate(`/safe/${encodeURIComponent(safePath)}`, {
+      const structure = await api.unlockSafe(id, password);
+      navigate(`/safe/${id}`, {
         state: {
           structure,
           password,
-          safePath,
+          id,
+          safeName: displayName,
         },
       });
     } catch (err) {

@@ -35,6 +35,11 @@ func main() {
 	safeService := service.NewSafeService(cfg.SafesDirectory)
 	safeHandler := handlers.NewSafeHandler(safeService)
 
+	// Prime the safe ID cache on startup
+	if _, err := safeService.ListSafes(); err != nil {
+		log.Printf("Warning: failed to prime safe ID cache: %v", err)
+	}
+
 	// Create provider registry and register factories
 	registry := provider.NewRegistry()
 	registry.Register("onedrive", onedrive.Factory)
@@ -56,7 +61,7 @@ func main() {
 	log.Printf("Discovered %d provider(s)", len(services))
 
 	// Create providers handler
-	providersHandler := handlers.NewProvidersHandler(services)
+	providersHandler := handlers.NewProvidersHandler(services, safeService)
 
 	// Create static provider handler (for upload/delete of static safes)
 	staticProviderHandler := handlers.NewStaticProviderHandler(cfg.SafesDirectory)

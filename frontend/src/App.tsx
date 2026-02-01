@@ -16,8 +16,8 @@ function App() {
           <div className="app-content">
             <Routes>
               <Route path="/" element={<BrowseSafes />} />
-              <Route path="/unlock/:safePath" element={<UnlockSafe />} />
-              <Route path="/safe/:safePath" element={<TreeView />} />
+              <Route path="/unlock/:id" element={<UnlockSafe />} />
+              <Route path="/safe/:id" element={<TreeView />} />
               <Route path="/add" element={<AddSafes />} />
               <Route path="/add/static" element={<StaticSafesPage />} />
               <Route path="/add/:providerId" element={<ProviderPage />} />

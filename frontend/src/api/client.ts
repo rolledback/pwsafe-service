@@ -1,6 +1,7 @@
 const API_BASE_URL = "/api";
 
 export type SafeFile = {
+  id: string;
   name: string;
   path: string;
   lastModified: string;
@@ -86,9 +87,8 @@ export const api = {
     return response.json();
   },
 
-  async unlockSafe(safePath: string, password: string): Promise<SafeStructure> {
-    const encodedPath = encodeURIComponent(safePath);
-    const response = await fetch(`${API_BASE_URL}/safes/${encodedPath}/unlock`, {
+  async unlockSafe(id: string, password: string): Promise<SafeStructure> {
+    const response = await fetch(`${API_BASE_URL}/safes/${id}/unlock`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -104,9 +104,8 @@ export const api = {
     return response.json();
   },
 
-  async getEntryPassword(safePath: string, password: string, entryUuid: string): Promise<string> {
-    const encodedPath = encodeURIComponent(safePath);
-    const response = await fetch(`${API_BASE_URL}/safes/${encodedPath}/entry`, {
+  async getEntryPassword(id: string, password: string, entryUuid: string): Promise<string> {
+    const response = await fetch(`${API_BASE_URL}/safes/${id}/entry`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
