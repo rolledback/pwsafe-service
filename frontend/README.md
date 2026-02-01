@@ -23,39 +23,30 @@ cd frontend
 npm install
 ```
 
-### 2. Build the Application
+### 2. Build
 
 ```bash
 npm run build
 ```
 
-### 3. Run the Development Server
+### 3. Test Changes
+
+The frontend is served from the backend. Use the e2e dev scripts to run the backend, serving your locally built frontend:
 
 ```bash
-npm run dev
+# Windows
+.\e2e-dev.ps1
+
+# Linux/macOS
+./e2e-dev.sh
 ```
 
-The application will be available at `http://localhost:3000` by default.
-
-## Configuration
-
-The frontend expects the backend API to be available at `http://localhost:8080` by default. Make sure the backend service is running before using the frontend.
-
-## Scripts
-
-| Script                 | Description                              |
-| ---------------------- | ---------------------------------------- |
-| `npm run dev`          | Start development server with watch mode |
-| `npm run build`        | Build production bundle                  |
-| `npm start`            | Serve production build                   |
-| `npm run format`       | Format code with Prettier                |
-| `npm run format:check` | Check code formatting                    |
+See [docs/dev.md](../docs/dev.md) for more details.
 
 ## Development Workflow
 
-1. **Start the backend** service (see backend/README.md)
-2. **Start development server**: `npm run dev`
-3. **Make changes** to code in `src/`
+1. **Make changes** to code in `src/`
+2. **Build**: `npm run build`
+3. **Test changes** using e2e dev scripts
 4. **Format code**: `npm run format`
-5. **Build for production**: `npm run build`
-6. **Commit** your changes
+5. **Commit** your changes
