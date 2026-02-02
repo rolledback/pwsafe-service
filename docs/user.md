@@ -2,7 +2,7 @@
 
 This guide covers how to deploy and use pwsafe-service to access your Password Safe files through a web browser.
 
-> ⚠️ **Security Notice**: This service has no built-in authentication beyond the master password required to open each safe. It is intended for **local or private network use only**. Do not expose it to the public internet.
+> ⚠️ **Security Notice**: This service has no built-in authentication beyond the master password required to open each safe. It is intended for **local or private network use only**. Do not expose it to the public internet. Use of HTTPS is strongly recommended.
 
 ## What is pwsafe-service?
 
