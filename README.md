@@ -16,12 +16,15 @@ Want to contribute or build from source? See the **[Developer Guide](docs/dev.md
 
 ### Why read only?
 
-Currently my requirements for this service are that it provides read-only access to my password safes. Allowing write access would mean:
+I typically manage my password safes using the free Windows client, but sometimes I'm on a platform where a free client doesn't exist. This service gives me at least easy read access to my passwords from any platform. If someone wants to add write support, I'd happily review a contribution.
 
-- Creating additional frontend UI
-- Determining a policy for resolving change conflicts for remotely synced password safes
+### Why no service authentication?
 
-Until my requirements change to include write access, the above list are not things I am interested in spending time on. However, if someone wants this service to support write access, I would happily review changes to enable it.
+I access this service through a home VPN rather than exposing it to the internet, so service-level authentication isn't a priority for me. If someone wants to add it though, I'd happily review a contribution.
+
+### Why no multi-user support?
+
+I'm the only Password Safe user in my household, so multi-user support isn't a priority for me. If someone wants to add it though, I'd happily review a contribution.
 
 ### Should I open a pull request or issue first?
 
