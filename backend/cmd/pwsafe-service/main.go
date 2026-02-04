@@ -72,18 +72,22 @@ func main() {
 	// Create static provider handler (for upload/delete of static safes)
 	staticProviderHandler := handlers.NewStaticProviderHandler(cfg.DataDirectory)
 
+	// General rate limiter
 	rateLimiter := middleware.NewRateLimiter(rate.Limit(5), 5)
 
+	// Strict rate limiter for password-sensitive endpoints
+	strictRateLimiter := middleware.NewRateLimiter(rate.Limit(0.2), 2)
+
 	http.HandleFunc("/api/safes", middleware.CORS(rateLimiter.Limit(safeHandler.ListSafes)))
-	http.HandleFunc("/api/safes/", middleware.CORS(rateLimiter.Limit(func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/api/safes/", middleware.CORS(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path[len(r.URL.Path)-7:] == "/unlock" {
-			safeHandler.UnlockSafe(w, r)
+			strictRateLimiter.Limit(safeHandler.UnlockSafe)(w, r)
 		} else if r.URL.Path[len(r.URL.Path)-6:] == "/entry" {
-			safeHandler.GetEntryPassword(w, r)
+			strictRateLimiter.Limit(safeHandler.GetEntryPassword)(w, r)
 		} else {
 			http.NotFound(w, r)
 		}
-	})))
+	}))
 
 	// Provider routes (new generic API)
 	http.HandleFunc("/api/providers", middleware.CORS(rateLimiter.Limit(providersHandler.ListProviders)))

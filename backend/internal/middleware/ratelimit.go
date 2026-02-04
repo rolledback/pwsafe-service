@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"log"
 	"net"
 	"net/http"
 	"sync"
@@ -45,6 +46,7 @@ func (rl *RateLimiter) Limit(next http.HandlerFunc) http.HandlerFunc {
 
 		limiter := rl.getVisitor(ip)
 		if !limiter.Allow() {
+			log.Printf("Rate limit exceeded: ip=%s path=%s method=%s", ip, r.URL.Path, r.Method)
 			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 			return
 		}
