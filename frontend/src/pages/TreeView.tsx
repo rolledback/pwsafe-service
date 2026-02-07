@@ -1,5 +1,5 @@
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { api, SafeStructure, Group, Entry } from "../api/client";
 
 type LocationState = {
@@ -64,6 +64,9 @@ function TreeView() {
   const [displayName, setDisplayName] = useState<string>("");
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  const [filterText, setFilterText] = useState("");
+  const [filterActive, setFilterActive] = useState(false);
+  const filterInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const state = location.state as LocationState | null;
@@ -124,6 +127,69 @@ function TreeView() {
     }
   };
 
+  type FilteredGroup = { group: Group; matchedEntries: Entry[]; matchedSubGroups: FilteredGroup[]; nameMatches: boolean };
+
+  const filterTree = (
+    groups: Group[],
+    entries: Entry[],
+    query: string,
+  ): { filteredGroups: FilteredGroup[]; filteredEntries: Entry[] } => {
+    const q = query.toLowerCase();
+
+    const filterGroup = (group: Group): FilteredGroup | null => {
+      const nameMatches = group.name.toLowerCase().includes(q);
+
+      const matchedSubGroups = (group.groups || []).map(filterGroup).filter((g): g is FilteredGroup => g !== null);
+
+      const matchedEntries = (group.entries || []).filter(
+        (e) => e.title.toLowerCase().includes(q) || e.username.toLowerCase().includes(q),
+      );
+
+      if (nameMatches || matchedEntries.length > 0 || matchedSubGroups.length > 0) {
+        return { group, matchedEntries, matchedSubGroups, nameMatches };
+      }
+      return null;
+    };
+
+    const filteredGroups = groups.map(filterGroup).filter((g): g is FilteredGroup => g !== null);
+    const filteredEntries = entries.filter((e) => e.title.toLowerCase().includes(q) || e.username.toLowerCase().includes(q));
+    return { filteredGroups, filteredEntries };
+  };
+
+  const renderFilteredGroup = (fg: FilteredGroup, level: number, parentPath: string = ""): React.ReactElement[] => {
+    const groupPath = getGroupPath(fg.group.name, parentPath);
+    const elements: React.ReactElement[] = [];
+
+    elements.push(<TreeItem key={groupPath} level={level} isGroup={true} isExpanded={true} name={fg.group.name} icon="📂" />);
+
+    fg.matchedSubGroups
+      .slice()
+      .sort((a, b) => a.group.name.localeCompare(b.group.name))
+      .forEach((sub) => {
+        elements.push(...renderFilteredGroup(sub, level + 1, groupPath));
+      });
+
+    fg.matchedEntries
+      .slice()
+      .sort((a, b) => a.title.localeCompare(b.title))
+      .forEach((entry) => {
+        elements.push(
+          <TreeItem
+            key={entry.uuid}
+            level={level + 1}
+            isGroup={false}
+            name={`${entry.title} [${entry.username}]`}
+            icon="🔑"
+            entry={entry}
+            onCopyPassword={handleCopyPassword}
+            onCopyUsername={handleCopyUsername}
+          />,
+        );
+      });
+
+    return elements;
+  };
+
   const renderGroup = (group: Group, level: number, parentPath: string = ""): React.ReactElement[] => {
     const groupPath = getGroupPath(group.name, parentPath);
     const isExpanded = expandedGroups.has(groupPath);
@@ -171,6 +237,10 @@ function TreeView() {
     return elements;
   };
 
+  const isFiltering = filterText.length > 0;
+  const filtered = isFiltering && structure ? filterTree(structure.groups, structure.entries || [], filterText) : null;
+  const hasResults = filtered ? filtered.filteredGroups.length > 0 || filtered.filteredEntries.length > 0 : true;
+
   if (!structure) {
     return (
       <div className="tree-container-page">
@@ -194,26 +264,96 @@ function TreeView() {
           </button>
         </div>
 
-        <div className="tree-container">
-          {structure.groups
-            .slice()
-            .sort((a, b) => a.name.localeCompare(b.name))
-            .map((group) => renderGroup(group, 0))}
-          {structure.entries
-            ?.slice()
-            .sort((a, b) => a.title.localeCompare(b.title))
-            .map((entry) => (
-              <TreeItem
-                key={entry.uuid}
-                level={0}
-                isGroup={false}
-                name={`${entry.title} [${entry.username}]`}
-                icon="🔑"
-                entry={entry}
-                onCopyPassword={handleCopyPassword}
-                onCopyUsername={handleCopyUsername}
+        <div className="filter-bar">
+          {filterActive ? (
+            <div className="filter-input-wrapper">
+              <span className="filter-input-icon">🔍</span>
+              <input
+                ref={filterInputRef}
+                className="filter-input"
+                type="text"
+                value={filterText}
+                onChange={(e) => setFilterText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setFilterText("");
+                    setFilterActive(false);
+                  }
+                }}
+                onBlur={() => {
+                  if (filterText === "") setFilterActive(false);
+                }}
+                placeholder="Filter entries..."
+                autoFocus
               />
-            ))}
+            </div>
+          ) : (
+            <div
+              className="filter-pill"
+              onClick={() => {
+                setFilterActive(true);
+                setTimeout(() => filterInputRef.current?.focus(), 0);
+              }}
+            >
+              <span className="filter-pill-icon">🔍</span>
+              <span className="filter-pill-text">Filter entries...</span>
+            </div>
+          )}
+        </div>
+
+        <div className="tree-container">
+          {isFiltering && filtered ? (
+            hasResults ? (
+              <>
+                {filtered.filteredGroups
+                  .slice()
+                  .sort((a, b) => a.group.name.localeCompare(b.group.name))
+                  .map((fg) => renderFilteredGroup(fg, 0))}
+                {filtered.filteredEntries
+                  .slice()
+                  .sort((a, b) => a.title.localeCompare(b.title))
+                  .map((entry) => (
+                    <TreeItem
+                      key={entry.uuid}
+                      level={0}
+                      isGroup={false}
+                      name={`${entry.title} [${entry.username}]`}
+                      icon="🔑"
+                      entry={entry}
+                      onCopyPassword={handleCopyPassword}
+                      onCopyUsername={handleCopyUsername}
+                    />
+                  ))}
+              </>
+            ) : (
+              <div className="filter-empty">
+                <div className="filter-empty-icon">🔍</div>
+                <div>No matching entries found</div>
+              </div>
+            )
+          ) : (
+            <>
+              {structure.groups
+                .slice()
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((group) => renderGroup(group, 0))}
+              {structure.entries
+                ?.slice()
+                .sort((a, b) => a.title.localeCompare(b.title))
+                .map((entry) => (
+                  <TreeItem
+                    key={entry.uuid}
+                    level={0}
+                    isGroup={false}
+                    name={`${entry.title} [${entry.username}]`}
+                    icon="🔑"
+                    entry={entry}
+                    onCopyPassword={handleCopyPassword}
+                    onCopyUsername={handleCopyUsername}
+                  />
+                ))}
+            </>
+          )}
         </div>
       </div>
     </div>
