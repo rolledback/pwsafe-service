@@ -32,11 +32,11 @@ func NewSafeService(dataDir string) *SafeService {
 	}
 }
 
-// ComputeID generates an 8-character hex ID from SHA256 of provider/relativePath
+// ComputeID generates a 16-character hex ID from SHA256 of provider/relativePath
 func (s *SafeService) ComputeID(provider, relativePath string) string {
 	input := provider + "/" + relativePath
 	hash := sha256.Sum256([]byte(input))
-	return hex.EncodeToString(hash[:4]) // 4 bytes = 8 hex chars
+	return hex.EncodeToString(hash[:8]) // 8 bytes = 16 hex chars
 }
 
 // ResolvePath looks up a safe by ID and returns its provider and path

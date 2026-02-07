@@ -324,6 +324,39 @@ func TestSync_FailsWhenNotConnected(t *testing.T) {
 	}
 }
 
+func TestGetLocalPath_RejectsPathTraversal(t *testing.T) {
+	tempDir := t.TempDir()
+
+	mockProvider := mock.NewProvider("mock")
+
+	ctx := context.Background()
+	svc := NewSyncableSafesService(ctx, tempDir, mockProvider)
+	defer svc.Stop()
+
+	cases := []struct {
+		name string
+		file SelectedFile
+	}{
+		{
+			name: "dotdot in path",
+			file: SelectedFile{ID: "bad1", Name: "evil.psafe3", Path: "/../../etc"},
+		},
+		{
+			name: "dotdot in name",
+			file: SelectedFile{ID: "bad2", Name: "../../../etc/passwd", Path: "/"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := svc.getLocalPath(tc.file)
+			if err == nil {
+				t.Error("Expected error for path traversal, got nil")
+			}
+		})
+	}
+}
+
 func TestSync_ReturnsLastModified(t *testing.T) {
 	tempDir := t.TempDir()
 

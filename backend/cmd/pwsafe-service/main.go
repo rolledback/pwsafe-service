@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -73,13 +76,30 @@ func main() {
 	staticProviderHandler := handlers.NewStaticProviderHandler(cfg.DataDirectory)
 
 	// General rate limiter
-	rateLimiter := middleware.NewRateLimiter(rate.Limit(5), 5)
+	rateLimiter := middleware.NewRateLimiter(ctx, rate.Limit(5), 5)
 
 	// Strict rate limiter for password-sensitive endpoints
-	strictRateLimiter := middleware.NewRateLimiter(rate.Limit(0.2), 2)
+	strictRateLimiter := middleware.NewRateLimiter(ctx, rate.Limit(0.2), 2)
 
-	http.HandleFunc("/api/safes", middleware.CORS(rateLimiter.Limit(safeHandler.ListSafes)))
-	http.HandleFunc("/api/safes/", middleware.CORS(func(w http.ResponseWriter, r *http.Request) {
+	// Generate API nonce token
+	tokenBytes := make([]byte, 32)
+	if _, err := io.ReadFull(rand.Reader, tokenBytes); err != nil {
+		log.Fatalf("Failed to generate API token: %v", err)
+	}
+	apiToken := hex.EncodeToString(tokenBytes)
+	log.Printf("API token generated (changes on each restart)")
+
+	// Read index.html once at startup for token injection
+	indexHTML, err := os.ReadFile(cfg.StaticDir + "/index.html")
+	if err != nil {
+		log.Fatalf("Failed to read index.html: %v", err)
+	}
+	// Inject token into index.html (insert script before </head>)
+	tokenScript := fmt.Sprintf(`<script>window.__PWSAFE_TOKEN="%s";</script>`, apiToken)
+	injectedHTML := strings.Replace(string(indexHTML), "</head>", tokenScript+"</head>", 1)
+
+	http.HandleFunc("/api/safes", middleware.CORS(middleware.RequireToken(apiToken, rateLimiter.Limit(safeHandler.ListSafes))))
+	http.HandleFunc("/api/safes/", middleware.CORS(middleware.RequireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path[len(r.URL.Path)-7:] == "/unlock" {
 			strictRateLimiter.Limit(safeHandler.UnlockSafe)(w, r)
 		} else if r.URL.Path[len(r.URL.Path)-6:] == "/entry" {
@@ -87,29 +107,36 @@ func main() {
 		} else {
 			http.NotFound(w, r)
 		}
-	}))
+	})))
 
 	// Provider routes (new generic API)
-	http.HandleFunc("/api/providers", middleware.CORS(rateLimiter.Limit(providersHandler.ListProviders)))
-	http.HandleFunc("/api/providers/static/", middleware.CORS(rateLimiter.Limit(staticProviderHandler.Route)))
-	http.HandleFunc("/api/providers/", middleware.CORS(func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/api/providers", middleware.CORS(middleware.RequireToken(apiToken, rateLimiter.Limit(providersHandler.ListProviders))))
+	http.HandleFunc("/api/providers/static/", middleware.CORS(middleware.RequireToken(apiToken, rateLimiter.Limit(staticProviderHandler.Route))))
+	http.HandleFunc("/api/providers/", middleware.CORS(middleware.RequireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 		// Don't rate limit callbacks (they come from OAuth redirects)
 		if strings.HasSuffix(r.URL.Path, "/auth/callback") {
 			providersHandler.Route(w, r)
 		} else {
 			rateLimiter.Limit(providersHandler.Route)(w, r)
 		}
-	}))
+	})))
 
-	// Serve static files with SPA fallback
 	http.HandleFunc("/web/", func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path[4:] // Remove "/web" prefix
 		fullPath := cfg.StaticDir + path
 
 		// Check if file exists
 		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-			// File doesn't exist, serve index.html for SPA routing
-			http.ServeFile(w, r, cfg.StaticDir+"/index.html")
+			// File doesn't exist, serve injected index.html for SPA routing
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Write([]byte(injectedHTML))
+			return
+		}
+
+		// For index.html specifically, serve injected version
+		if path == "/" || path == "/index.html" {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Write([]byte(injectedHTML))
 			return
 		}
 
@@ -133,7 +160,7 @@ func main() {
 
 	addr := fmt.Sprintf("%s:%s", cfg.ServerHost, cfg.ServerPort)
 	log.Printf("Starting server on %s", addr)
-	if err := http.ListenAndServe(addr, nil); err != nil {
+	if err := http.ListenAndServe(addr, middleware.SecurityHeaders(http.DefaultServeMux)); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
 }

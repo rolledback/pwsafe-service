@@ -159,7 +159,12 @@ func (s *SyncableSafesService) Sync(ctx context.Context) ([]SyncResult, error) {
 
 	// Step 2: For each selected file, download from remote
 	for _, file := range selectedFiles {
-		localPath := s.getLocalPath(file)
+		localPath, err := s.getLocalPath(file)
+		if err != nil {
+			log.Printf("%s: skipping file %q: %v", s.provider.ID(), file.Name, err)
+			results = append(results, SyncResult{Name: file.Name, Success: false, Error: err.Error()})
+			continue
+		}
 		result := SyncResult{Name: file.Name, Success: false}
 
 		// Ensure parent directory exists
@@ -281,10 +286,26 @@ func (s *SyncableSafesService) saveConfig(config *SyncConfig) error {
 	return os.WriteFile(s.configPath(), data, 0600)
 }
 
-func (s *SyncableSafesService) getLocalPath(file SelectedFile) string {
+func (s *SyncableSafesService) getLocalPath(file SelectedFile) (string, error) {
 	relativePath := filepath.FromSlash(file.Path)
 	relativePath = strings.TrimPrefix(relativePath, string(filepath.Separator))
-	return filepath.Join(s.providerDir(), relativePath, file.Name)
+	joined := filepath.Clean(filepath.Join(s.providerDir(), relativePath, file.Name))
+
+	absPath, err := filepath.Abs(joined)
+	if err != nil {
+		return "", fmt.Errorf("invalid file path: %w", err)
+	}
+
+	absBase, err := filepath.Abs(s.providerDir())
+	if err != nil {
+		return "", fmt.Errorf("invalid provider directory: %w", err)
+	}
+
+	if !strings.HasPrefix(absPath, absBase+string(filepath.Separator)) {
+		return "", fmt.Errorf("path traversal not allowed: %s", file.Path)
+	}
+
+	return absPath, nil
 }
 
 // downloadToPath handles atomic file writing from provider stream
@@ -323,7 +344,11 @@ func (s *SyncableSafesService) downloadToPath(ctx context.Context, fileID, local
 func (s *SyncableSafesService) cleanupUnselectedFiles(selectedFiles []SelectedFile) {
 	selectedPaths := make(map[string]bool)
 	for _, f := range selectedFiles {
-		selectedPaths[s.getLocalPath(f)] = true
+		p, err := s.getLocalPath(f)
+		if err != nil {
+			continue
+		}
+		selectedPaths[p] = true
 	}
 
 	providerDir := s.providerDir()

@@ -1,5 +1,13 @@
 const API_BASE_URL = "/api";
 
+function getApiToken(): string {
+  return (window as any).__PWSAFE_TOKEN || "";
+}
+
+function apiHeaders(extra?: Record<string, string>): Record<string, string> {
+  return { "X-PWSAFE-Token": getApiToken(), ...extra };
+}
+
 export type SafeFile = {
   id: string;
   name: string;
@@ -80,7 +88,9 @@ export type ProviderSyncResponse = {
 
 export const api = {
   async listSafes(): Promise<SafeFile[]> {
-    const response = await fetch(`${API_BASE_URL}/safes`);
+    const response = await fetch(`${API_BASE_URL}/safes`, {
+      headers: apiHeaders(),
+    });
     if (!response.ok) {
       throw new Error("Failed to fetch safes");
     }
@@ -90,9 +100,7 @@ export const api = {
   async unlockSafe(id: string, password: string): Promise<SafeStructure> {
     const response = await fetch(`${API_BASE_URL}/safes/${id}/unlock`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: apiHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ password }),
     });
 
@@ -107,9 +115,7 @@ export const api = {
   async getEntryPassword(id: string, password: string, entryUuid: string): Promise<string> {
     const response = await fetch(`${API_BASE_URL}/safes/${id}/entry`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: apiHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ password, entryUuid }),
     });
 
@@ -124,7 +130,9 @@ export const api = {
 
   // Provider APIs
   async listProviders(): Promise<ProvidersResponse> {
-    const response = await fetch(`${API_BASE_URL}/providers`);
+    const response = await fetch(`${API_BASE_URL}/providers`, {
+      headers: apiHeaders(),
+    });
     if (!response.ok) {
       throw new Error("Failed to list providers");
     }
@@ -132,7 +140,9 @@ export const api = {
   },
 
   async getProviderStatus(providerId: string): Promise<ProviderStatus> {
-    const response = await fetch(`${API_BASE_URL}/providers/${providerId}/status`);
+    const response = await fetch(`${API_BASE_URL}/providers/${providerId}/status`, {
+      headers: apiHeaders(),
+    });
     if (!response.ok) {
       throw new Error(`Failed to get ${providerId} status`);
     }
@@ -140,7 +150,9 @@ export const api = {
   },
 
   async getProviderAuthUrl(providerId: string): Promise<ProviderAuthURL> {
-    const response = await fetch(`${API_BASE_URL}/providers/${providerId}/auth/url`);
+    const response = await fetch(`${API_BASE_URL}/providers/${providerId}/auth/url`, {
+      headers: apiHeaders(),
+    });
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.error || `Failed to get ${providerId} auth URL`);
@@ -151,6 +163,7 @@ export const api = {
   async disconnectProvider(providerId: string): Promise<{ success: boolean }> {
     const response = await fetch(`${API_BASE_URL}/providers/${providerId}/disconnect`, {
       method: "POST",
+      headers: apiHeaders(),
     });
     if (!response.ok) {
       const error = await response.json();
@@ -160,7 +173,9 @@ export const api = {
   },
 
   async getProviderFiles(providerId: string): Promise<ProviderFilesResponse> {
-    const response = await fetch(`${API_BASE_URL}/providers/${providerId}/files`);
+    const response = await fetch(`${API_BASE_URL}/providers/${providerId}/files`, {
+      headers: apiHeaders(),
+    });
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.error || `Failed to get ${providerId} files`);
@@ -171,9 +186,7 @@ export const api = {
   async saveProviderFiles(providerId: string, files: ProviderFile[]): Promise<{ success: boolean }> {
     const response = await fetch(`${API_BASE_URL}/providers/${providerId}/files`, {
       method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: apiHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ files }),
     });
     if (!response.ok) {
@@ -186,6 +199,7 @@ export const api = {
   async syncProvider(providerId: string): Promise<ProviderSyncResponse> {
     const response = await fetch(`${API_BASE_URL}/providers/${providerId}/sync`, {
       method: "POST",
+      headers: apiHeaders(),
     });
     if (!response.ok) {
       const error = await response.json();
@@ -203,6 +217,7 @@ export const api = {
 
     const response = await fetch(url, {
       method: "POST",
+      headers: apiHeaders(),
       body: formData,
     });
 
@@ -223,6 +238,7 @@ export const api = {
   async deleteStaticSafe(filename: string): Promise<{ success: boolean }> {
     const response = await fetch(`${API_BASE_URL}/providers/static/files/${encodeURIComponent(filename)}`, {
       method: "DELETE",
+      headers: apiHeaders(),
     });
     if (!response.ok) {
       const error = await response.json();
