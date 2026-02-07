@@ -25,7 +25,7 @@ type SyncableSafesProvider interface {
 
 	// Auth lifecycle
 	GetAuthURL(ctx context.Context) (string, error)
-	HandleCallback(ctx context.Context, code string) error
+	HandleCallback(ctx context.Context, code string, state string) error
 	Disconnect(ctx context.Context) error
 	GetConnectionStatus(ctx context.Context, attemptRefresh bool) (*ConnectionStatus, error)
 

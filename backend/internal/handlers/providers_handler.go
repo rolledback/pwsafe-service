@@ -149,7 +149,8 @@ func (h *ProvidersHandler) handleCallback(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := svc.Provider().HandleCallback(r.Context(), code); err != nil {
+	state := r.URL.Query().Get("state")
+	if err := svc.Provider().HandleCallback(r.Context(), code, state); err != nil {
 		log.Printf("Error handling %s callback: %v", providerID, err)
 		http.Redirect(w, r, "/web/add/"+providerID+"?error=token_exchange_failed", http.StatusFound)
 		return

@@ -86,7 +86,7 @@ func TestProvider_HandleCallback(t *testing.T) {
 	p.SetConnected(false)
 	ctx := context.Background()
 
-	err := p.HandleCallback(ctx, "auth-code")
+	err := p.HandleCallback(ctx, "auth-code", "")
 	if err != nil {
 		t.Fatalf("HandleCallback failed: %v", err)
 	}

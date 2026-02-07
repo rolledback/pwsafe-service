@@ -28,7 +28,7 @@ func (m *mockProvider) DisplayName() string                                     
 func (m *mockProvider) Icon() string                                            { return "" }
 func (m *mockProvider) BrandColor() string                                      { return "" }
 func (m *mockProvider) GetAuthURL(ctx context.Context) (string, error)          { return "", nil }
-func (m *mockProvider) HandleCallback(ctx context.Context, code string) error   { return nil }
+func (m *mockProvider) HandleCallback(ctx context.Context, code string, state string) error   { return nil }
 func (m *mockProvider) Disconnect(ctx context.Context) error                    { return nil }
 func (m *mockProvider) GetConnectionStatus(ctx context.Context, attemptRefresh bool) (*ConnectionStatus, error) {
 	return &ConnectionStatus{}, nil

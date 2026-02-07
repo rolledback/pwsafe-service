@@ -121,9 +121,19 @@ func (p *OneDriveProvider) GetAuthURL(ctx context.Context) (string, error) {
 
 	codeChallenge := generateCodeChallenge(codeVerifier)
 
-	// Store code verifier for later use in callback
+	// Generate OAuth state parameter (CSRF protection)
+	stateBytes := make([]byte, 16)
+	if _, err := io.ReadFull(rand.Reader, stateBytes); err != nil {
+		return "", fmt.Errorf("failed to generate state: %w", err)
+	}
+	state := base64.URLEncoding.EncodeToString(stateBytes)
+
+	// Store code verifier and state for later use in callback
 	if err := p.storeCodeVerifier(codeVerifier); err != nil {
 		return "", fmt.Errorf("failed to store code verifier: %w", err)
+	}
+	if err := p.storeOAuthState(state); err != nil {
+		return "", fmt.Errorf("failed to store OAuth state: %w", err)
 	}
 
 	params := url.Values{
@@ -134,14 +144,25 @@ func (p *OneDriveProvider) GetAuthURL(ctx context.Context) (string, error) {
 		"response_mode":         {"query"},
 		"code_challenge":        {codeChallenge},
 		"code_challenge_method": {"S256"},
+		"state":                 {state},
 	}
 
 	return msAuthorizeURL + "?" + params.Encode(), nil
 }
 
-func (p *OneDriveProvider) HandleCallback(ctx context.Context, code string) error {
+func (p *OneDriveProvider) HandleCallback(ctx context.Context, code string, state string) error {
 	if p.clientID == "" {
 		return fmt.Errorf("OneDrive client ID not configured")
+	}
+
+	// Validate OAuth state parameter (CSRF protection)
+	expectedState, err := p.loadOAuthState()
+	if err != nil {
+		return fmt.Errorf("failed to load OAuth state: %w", err)
+	}
+	if state != expectedState {
+		p.deleteOAuthState()
+		return fmt.Errorf("OAuth state mismatch")
 	}
 
 	// Retrieve code verifier
@@ -171,8 +192,9 @@ func (p *OneDriveProvider) HandleCallback(ctx context.Context, code string) erro
 		return fmt.Errorf("failed to store tokens: %w", err)
 	}
 
-	// Clean up code verifier
+	// Clean up code verifier and OAuth state
 	p.deleteCodeVerifier()
+	p.deleteOAuthState()
 
 	return nil
 }
@@ -555,6 +577,25 @@ func (p *OneDriveProvider) loadCodeVerifier() (string, error) {
 func (p *OneDriveProvider) deleteCodeVerifier() {
 	verifierPath := filepath.Join(p.storageDir, ".code_verifier")
 	os.Remove(verifierPath)
+}
+
+func (p *OneDriveProvider) storeOAuthState(state string) error {
+	statePath := filepath.Join(p.storageDir, ".oauth_state")
+	return os.WriteFile(statePath, []byte(state), 0600)
+}
+
+func (p *OneDriveProvider) loadOAuthState() (string, error) {
+	statePath := filepath.Join(p.storageDir, ".oauth_state")
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func (p *OneDriveProvider) deleteOAuthState() {
+	statePath := filepath.Join(p.storageDir, ".oauth_state")
+	os.Remove(statePath)
 }
 
 // cleanupStaleCodeVerifier removes any expired code verifier from previous runs

@@ -172,7 +172,7 @@ func (p *Provider) GetAuthURL(ctx context.Context) (string, error) {
 	return "https://mock.auth.url/" + p.id, nil
 }
 
-func (p *Provider) HandleCallback(ctx context.Context, code string) error {
+func (p *Provider) HandleCallback(ctx context.Context, code string, state string) error {
 	if p.AuthError != nil {
 		return p.AuthError
 	}
