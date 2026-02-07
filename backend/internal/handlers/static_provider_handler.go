@@ -66,8 +66,6 @@ func (h *StaticProviderHandler) handleFiles(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *StaticProviderHandler) uploadFile(w http.ResponseWriter, r *http.Request) {
-	log.Printf("POST /api/providers/static/files")
-
 	// Parse multipart form (limit to 10MB)
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
 		log.Printf("Error parsing multipart form: %v", err)
@@ -135,8 +133,6 @@ func (h *StaticProviderHandler) uploadFile(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *StaticProviderHandler) deleteFile(w http.ResponseWriter, r *http.Request, filename string) {
-	log.Printf("DELETE /api/providers/static/files/%s", filename)
-
 	// Sanitize filename to prevent path traversal
 	filename = h.sanitizeFilename(filename)
 	if filename == "" {

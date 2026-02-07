@@ -21,8 +21,6 @@ func NewSafeHandler(safeService *service.SafeService) *SafeHandler {
 }
 
 func (h *SafeHandler) ListSafes(w http.ResponseWriter, r *http.Request) {
-	log.Printf("GET /api/safes")
-
 	if r.Method != http.MethodGet {
 		h.respondError(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -50,8 +48,6 @@ func (h *SafeHandler) UnlockSafe(w http.ResponseWriter, r *http.Request) {
 		h.respondError(w, "Invalid safe identifier", http.StatusBadRequest)
 		return
 	}
-
-	log.Printf("POST /api/safes/%s/unlock", id)
 
 	// Resolve ID to path
 	ref, err := h.safeService.ResolvePath(id)
@@ -100,8 +96,6 @@ func (h *SafeHandler) GetEntryPassword(w http.ResponseWriter, r *http.Request) {
 		h.respondError(w, "Invalid safe identifier", http.StatusBadRequest)
 		return
 	}
-
-	log.Printf("POST /api/safes/%s/entry", id)
 
 	// Resolve ID to path
 	ref, err := h.safeService.ResolvePath(id)

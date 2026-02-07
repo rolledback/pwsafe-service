@@ -34,8 +34,6 @@ func NewProvidersHandler(services map[string]*service.SyncableSafesService, safe
 
 // ListProviders handles GET /api/providers - lists all available providers
 func (h *ProvidersHandler) ListProviders(w http.ResponseWriter, r *http.Request) {
-	log.Printf("GET /api/providers")
-
 	if r.Method != http.MethodGet {
 		h.respondError(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -101,7 +99,6 @@ func (h *ProvidersHandler) Route(w http.ResponseWriter, r *http.Request) {
 
 func (h *ProvidersHandler) getStatus(w http.ResponseWriter, r *http.Request, svc *service.SyncableSafesService) {
 	providerID := svc.Provider().ID()
-	log.Printf("GET /api/providers/%s/status", providerID)
 
 	if r.Method != http.MethodGet {
 		h.respondError(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -120,7 +117,6 @@ func (h *ProvidersHandler) getStatus(w http.ResponseWriter, r *http.Request, svc
 
 func (h *ProvidersHandler) getAuthURL(w http.ResponseWriter, r *http.Request, svc *service.SyncableSafesService) {
 	providerID := svc.Provider().ID()
-	log.Printf("GET /api/providers/%s/auth/url", providerID)
 
 	if r.Method != http.MethodGet {
 		h.respondError(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -138,8 +134,6 @@ func (h *ProvidersHandler) getAuthURL(w http.ResponseWriter, r *http.Request, sv
 }
 
 func (h *ProvidersHandler) handleCallback(w http.ResponseWriter, r *http.Request, svc *service.SyncableSafesService, providerID string) {
-	log.Printf("GET /api/providers/%s/auth/callback", providerID)
-
 	if r.Method != http.MethodGet {
 		h.respondError(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -166,7 +160,6 @@ func (h *ProvidersHandler) handleCallback(w http.ResponseWriter, r *http.Request
 
 func (h *ProvidersHandler) disconnect(w http.ResponseWriter, r *http.Request, svc *service.SyncableSafesService) {
 	providerID := svc.Provider().ID()
-	log.Printf("POST /api/providers/%s/disconnect", providerID)
 
 	if r.Method != http.MethodPost {
 		h.respondError(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -195,7 +188,6 @@ func (h *ProvidersHandler) handleFiles(w http.ResponseWriter, r *http.Request, s
 
 func (h *ProvidersHandler) listFiles(w http.ResponseWriter, r *http.Request, svc *service.SyncableSafesService) {
 	providerID := svc.Provider().ID()
-	log.Printf("GET /api/providers/%s/files", providerID)
 
 	files, err := svc.ListFiles(r.Context())
 	if err != nil {
@@ -209,7 +201,6 @@ func (h *ProvidersHandler) listFiles(w http.ResponseWriter, r *http.Request, svc
 
 func (h *ProvidersHandler) saveFiles(w http.ResponseWriter, r *http.Request, svc *service.SyncableSafesService) {
 	providerID := svc.Provider().ID()
-	log.Printf("PUT /api/providers/%s/files", providerID)
 
 	var req struct {
 		Files []service.SelectedFile `json:"files"`
@@ -230,7 +221,6 @@ func (h *ProvidersHandler) saveFiles(w http.ResponseWriter, r *http.Request, svc
 
 func (h *ProvidersHandler) sync(w http.ResponseWriter, r *http.Request, svc *service.SyncableSafesService) {
 	providerID := svc.Provider().ID()
-	log.Printf("POST /api/providers/%s/sync", providerID)
 
 	if r.Method != http.MethodPost {
 		h.respondError(w, "Method not allowed", http.StatusMethodNotAllowed)

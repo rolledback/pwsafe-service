@@ -160,7 +160,7 @@ func main() {
 
 	addr := fmt.Sprintf("%s:%s", cfg.ServerHost, cfg.ServerPort)
 	log.Printf("Starting server on %s", addr)
-	if err := http.ListenAndServe(addr, middleware.SecurityHeaders(http.DefaultServeMux)); err != nil {
+	if err := http.ListenAndServe(addr, middleware.Logging(middleware.SecurityHeaders(http.DefaultServeMux))); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
 }
