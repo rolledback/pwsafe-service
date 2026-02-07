@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/rolledback/pwsafe-service/backend/internal/config"
@@ -94,9 +96,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to read index.html: %v", err)
 	}
-	// Inject token into index.html (insert script before </head>)
-	tokenScript := fmt.Sprintf(`<script>window.__PWSAFE_TOKEN="%s";</script>`, apiToken)
-	injectedHTML := strings.Replace(string(indexHTML), "</head>", tokenScript+"</head>", 1)
+	// Inject token into index.html template (insert script before </head>)
+	// Uses a placeholder for the CSP nonce which is replaced per-request
+	tokenScript := fmt.Sprintf(`<script nonce="%%NONCE%%">window.__PWSAFE_TOKEN="%s";</script>`, apiToken)
+	indexHTMLTemplate := strings.Replace(string(indexHTML), "</head>", tokenScript+"</head>", 1)
 
 	http.HandleFunc("/api/safes", middleware.CORS(middleware.RequireToken(apiToken, rateLimiter.Limit(safeHandler.ListSafes))))
 	http.HandleFunc("/api/safes/", middleware.CORS(middleware.RequireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
@@ -114,29 +117,40 @@ func main() {
 	http.HandleFunc("/api/providers/static/", middleware.CORS(middleware.RequireToken(apiToken, rateLimiter.Limit(staticProviderHandler.Route))))
 	http.HandleFunc("/api/providers/", middleware.CORS(middleware.RequireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 		// Don't rate limit callbacks (they come from OAuth redirects)
-		if strings.HasSuffix(r.URL.Path, "/auth/callback") {
+		if middleware.IsOAuthCallback(r.URL.Path) {
 			providersHandler.Route(w, r)
 		} else {
 			rateLimiter.Limit(providersHandler.Route)(w, r)
 		}
 	})))
 
+	// Resolve absolute static dir once for containment checks
+	absStaticDir, err := filepath.Abs(cfg.StaticDir)
+	if err != nil {
+		log.Fatalf("Failed to resolve static dir: %v", err)
+	}
+
 	http.HandleFunc("/web/", func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path[4:] // Remove "/web" prefix
-		fullPath := cfg.StaticDir + path
 
-		// Check if file exists
-		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-			// File doesn't exist, serve injected index.html for SPA routing
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Write([]byte(injectedHTML))
+		// For index.html or root, serve injected version with CSP nonce
+		if path == "/" || path == "/index.html" {
+			serveInjectedHTML(w, indexHTMLTemplate)
 			return
 		}
 
-		// For index.html specifically, serve injected version
-		if path == "/" || path == "/index.html" {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Write([]byte(injectedHTML))
+		// Sanitize path and verify containment within static dir
+		fullPath := filepath.Join(cfg.StaticDir, filepath.FromSlash(path))
+		absPath, err := filepath.Abs(fullPath)
+		if err != nil || !strings.HasPrefix(absPath, absStaticDir+string(filepath.Separator)) {
+			serveInjectedHTML(w, indexHTMLTemplate)
+			return
+		}
+
+		// Check if file exists
+		if _, err := os.Stat(absPath); os.IsNotExist(err) {
+			// File doesn't exist, serve injected index.html for SPA routing
+			serveInjectedHTML(w, indexHTMLTemplate)
 			return
 		}
 
@@ -163,4 +177,17 @@ func main() {
 	if err := http.ListenAndServe(addr, middleware.Logging(middleware.SecurityHeaders(http.DefaultServeMux))); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
+}
+
+// serveInjectedHTML serves the index.html template with a per-request CSP nonce.
+func serveInjectedHTML(w http.ResponseWriter, htmlTemplate string) {
+	nonceBytes := make([]byte, 16)
+	io.ReadFull(rand.Reader, nonceBytes)
+	nonce := base64.StdEncoding.EncodeToString(nonceBytes)
+
+	html := strings.Replace(htmlTemplate, "%NONCE%", nonce, -1)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Security-Policy",
+		fmt.Sprintf("default-src 'self'; script-src 'self' 'nonce-%s'; img-src 'self' data:", nonce))
+	w.Write([]byte(html))
 }

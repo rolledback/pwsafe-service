@@ -5,6 +5,11 @@ import (
 	"strings"
 )
 
+// IsOAuthCallback returns true if the request path is a provider OAuth callback.
+func IsOAuthCallback(path string) bool {
+	return strings.HasPrefix(path, "/api/providers/") && strings.HasSuffix(path, "/auth/callback")
+}
+
 func RequireToken(token string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Skip token check for OPTIONS preflight
@@ -14,7 +19,7 @@ func RequireToken(token string, next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		// Skip token check for OAuth callbacks (external redirects)
-		if strings.HasSuffix(r.URL.Path, "/auth/callback") {
+		if IsOAuthCallback(r.URL.Path) {
 			next(w, r)
 			return
 		}
