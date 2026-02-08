@@ -1,0 +1,92 @@
+name: Full CI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'e2e/**'
+      - '.github/workflows/**'
+
+jobs:
+  backend:
+    uses: ./.github/workflows/backend.yml
+
+  frontend:
+    uses: ./.github/workflows/frontend.yml
+
+  e2e:
+    uses: ./.github/workflows/e2e.yml
+
+  coverage:
+    needs: [backend, e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.5'
+
+      - name: Download backend coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-coverage
+          path: coverage/
+
+      - name: Download e2e coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: e2e-coverage
+          path: coverage/
+
+      - name: Merge and report coverage
+        working-directory: ./backend
+        run: |
+          show_coverage() {
+            # Show per-package coverage + total
+            go tool cover -func="$1" | awk '
+              {
+                # Extract package from file path
+                split($1, parts, "/")
+                pkg = ""
+                for (i = 1; i < length(parts); i++) pkg = pkg parts[i] "/"
+                if (pkg != last_pkg && last_pkg != "") {
+                  printf "  %-60s %s\n", last_pkg, last_pct
+                }
+                last_pkg = pkg; last_pct = $NF
+              }
+              END {
+                if (last_pkg != "") printf "  %-60s %s\n", last_pkg, last_pct
+              }
+            '
+            echo ""
+            go tool cover -func="$1" | tail -1
+          }
+
+          echo "=== Backend Unit Test Coverage ==="
+          show_coverage ../coverage/coverage.out
+          echo ""
+          if [ -f ../coverage/e2e-coverage.out ]; then
+            echo "=== E2E Test Coverage ==="
+            show_coverage ../coverage/e2e-coverage.out
+            echo ""
+            echo "=== Combined Coverage ==="
+            head -1 ../coverage/coverage.out > ../coverage/combined.out
+            tail -n +2 ../coverage/coverage.out >> ../coverage/combined.out
+            tail -n +2 ../coverage/e2e-coverage.out >> ../coverage/combined.out
+            show_coverage ../coverage/combined.out
+          else
+            echo "No e2e coverage data available"
+          fi
+
+      - name: Upload combined coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: combined-coverage
+          path: coverage/
+          retention-days: 7

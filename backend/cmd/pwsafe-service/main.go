@@ -10,8 +10,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/rolledback/pwsafe-service/backend/internal/config"
 	"github.com/rolledback/pwsafe-service/backend/internal/handlers"
@@ -172,9 +174,22 @@ func main() {
 		http.Redirect(w, r, "/web"+r.URL.Path, http.StatusMovedPermanently)
 	})
 
-	addr := fmt.Sprintf("%s:%s", cfg.ServerHost, cfg.ServerPort)
-	log.Printf("Starting server on %s", addr)
-	if err := http.ListenAndServe(addr, middleware.Logging(middleware.SecurityHeaders(http.DefaultServeMux))); err != nil {
+	server := &http.Server{
+		Addr:    fmt.Sprintf("%s:%s", cfg.ServerHost, cfg.ServerPort),
+		Handler: middleware.Logging(middleware.SecurityHeaders(http.DefaultServeMux)),
+	}
+
+	// Graceful shutdown on SIGTERM/SIGINT (needed for coverage data flush)
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+		<-sigCh
+		log.Printf("Shutting down server...")
+		server.Close()
+	}()
+
+	log.Printf("Starting server on %s", server.Addr)
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Server failed to start: %v", err)
 	}
 }

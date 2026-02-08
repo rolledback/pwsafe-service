@@ -7,9 +7,7 @@ on:
       - 'frontend/**'
       - 'e2e/**'
       - '.github/workflows/e2e.yml'
-  push:
-    branches:
-      - main
+  workflow_call:
 
 jobs:
   e2e:
@@ -33,9 +31,9 @@ jobs:
             frontend/package-lock.json
             e2e/package-lock.json
 
-      - name: Build backend
+      - name: Build backend with coverage
         working-directory: ./backend
-        run: go build -o pwsafe-service cmd/pwsafe-service/main.go
+        run: go build -cover -covermode=atomic -o pwsafe-service cmd/pwsafe-service/main.go
 
       - name: Build frontend
         working-directory: ./frontend
@@ -45,6 +43,32 @@ jobs:
         working-directory: ./e2e
         run: npm ci
 
+      - name: Create coverage directory
+        run: mkdir -p /tmp/e2e-coverdata
+
       - name: Run e2e tests
         working-directory: ./e2e
+        env:
+          GOCOVERDIR: /tmp/e2e-coverdata
         run: npm test
+
+      - name: Convert coverage data
+        if: always()
+        working-directory: ./backend
+        run: |
+          if [ -d /tmp/e2e-coverdata ] && [ "$(ls -A /tmp/e2e-coverdata 2>/dev/null)" ]; then
+            go tool covdata textfmt -i=/tmp/e2e-coverdata -o=../e2e-coverage.out
+            echo "=== E2E Coverage ==="
+            go tool cover -func=../e2e-coverage.out | tail -1
+          else
+            echo "No coverage data produced"
+          fi
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-coverage
+          path: e2e-coverage.out
+          retention-days: 1
+          if-no-files-found: ignore

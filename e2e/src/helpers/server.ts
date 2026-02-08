@@ -34,19 +34,22 @@ export class ServerInstance {
     // Copy built frontend
     await cp(FRONTEND_DIST, staticDir, { recursive: true });
 
-    // Write settings.json with mock provider enabled
+    const binaryPath = join(BACKEND_DIR, BINARY_NAME);
+
+    // Find a free port before starting so we can set baseUrl in settings
+    const port = await this.findFreePort();
+    this.port = port;
+    this.baseUrl = `http://localhost:${port}`;
+
+    // Write settings.json with mock provider enabled and correct base URL
     const settings = {
-      baseUrl: "", // Will be set after we know the port
+      baseUrl: this.baseUrl,
       providers: {
         mock: {},
       },
     };
     await writeFile(join(configDir, "settings.json"), JSON.stringify(settings, null, 2));
 
-    const binaryPath = join(BACKEND_DIR, BINARY_NAME);
-
-    // Start the server with port 0 for OS-assigned port
-    const port = await this.findFreePort();
     this.process = spawn(binaryPath, [], {
       cwd: BACKEND_DIR,
       env: {
@@ -59,14 +62,6 @@ export class ServerInstance {
       stdio: ["ignore", "pipe", "pipe"],
     });
 
-    // Parse actual port from stdout
-    this.port = port;
-    this.baseUrl = `http://localhost:${port}`;
-
-    // Update settings.json with actual base URL
-    settings.baseUrl = this.baseUrl;
-    await writeFile(join(configDir, "settings.json"), JSON.stringify(settings, null, 2));
-
     // Wait for server to be ready
     await this.waitForReady();
 
@@ -76,7 +71,19 @@ export class ServerInstance {
 
   async stop(): Promise<void> {
     if (this.process) {
-      this.process.kill();
+      // Send SIGTERM for graceful shutdown (flushes coverage data)
+      this.process.kill("SIGTERM");
+      // Wait briefly for process to exit
+      await new Promise<void>((resolve) => {
+        const timeout = setTimeout(() => {
+          this.process?.kill("SIGKILL");
+          resolve();
+        }, 3000);
+        this.process!.on("exit", () => {
+          clearTimeout(timeout);
+          resolve();
+        });
+      });
       this.process = null;
     }
     if (this.tempDir) {
