@@ -18,8 +18,9 @@ type Config struct {
 
 // Settings represents the parsed settings.json file
 type Settings struct {
-	BaseURL   string                       `json:"baseUrl"`
-	Providers map[string]map[string]any    `json:"providers"`
+	BaseURL      string                       `json:"baseUrl"`
+	SyncInterval string                       `json:"syncInterval"`
+	Providers    map[string]map[string]any    `json:"providers"`
 }
 
 func Load() *Config {

@@ -37,13 +37,17 @@ func NewSyncableSafesService(
 	ctx context.Context,
 	dataDir string,
 	p provider.SyncableSafesProvider,
+	syncInterval time.Duration,
 ) *SyncableSafesService {
+	if syncInterval <= 0 {
+		syncInterval = defaultSyncInterval
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	svc := &SyncableSafesService{
 		dataDir:      dataDir,
 		provider:     p,
-		syncInterval: defaultSyncInterval,
-		nextSyncAt:   time.Now().Add(defaultSyncInterval),
+		syncInterval: syncInterval,
+		nextSyncAt:   time.Now().Add(syncInterval),
 		ctx:          ctx,
 		cancel:       cancel,
 	}

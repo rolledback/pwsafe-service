@@ -93,3 +93,18 @@ func TestLoadSettings_InvalidJSON(t *testing.T) {
 		t.Errorf("expected nil settings on error, got %v", settings)
 	}
 }
+
+func TestLoadSettings_WithSyncInterval(t *testing.T) {
+	tmpDir := t.TempDir()
+	data := []byte(`{"syncInterval": "30s", "providers": {}}`)
+	if err := os.WriteFile(filepath.Join(tmpDir, "settings.json"), data, 0644); err != nil {
+		t.Fatalf("failed to write settings file: %v", err)
+	}
+	settings, err := LoadSettings(tmpDir)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if settings.SyncInterval != "30s" {
+		t.Errorf("expected SyncInterval %q, got %q", "30s", settings.SyncInterval)
+	}
+}

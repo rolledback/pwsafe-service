@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/rolledback/pwsafe-service/backend/internal/config"
 	"github.com/rolledback/pwsafe-service/backend/internal/handlers"
@@ -63,10 +64,21 @@ func main() {
 		log.Fatalf("Failed to discover providers: %v", err)
 	}
 
+	// Parse sync interval from settings
+	var syncInterval time.Duration
+	if settings.SyncInterval != "" {
+		parsed, err := time.ParseDuration(settings.SyncInterval)
+		if err != nil {
+			log.Fatalf("Invalid syncInterval %q: %v", settings.SyncInterval, err)
+		}
+		syncInterval = parsed
+		log.Printf("Sync interval: %s", syncInterval)
+	}
+
 	// Create SyncableSafesService for each discovered provider
 	services := make(map[string]*service.SyncableSafesService)
 	for id, p := range providers {
-		svc := service.NewSyncableSafesService(ctx, cfg.DataDirectory, p)
+		svc := service.NewSyncableSafesService(ctx, cfg.DataDirectory, p, syncInterval)
 		services[id] = svc
 		defer svc.Stop()
 	}

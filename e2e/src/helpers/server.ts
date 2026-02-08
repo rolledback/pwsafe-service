@@ -9,13 +9,22 @@ const TESTDATA_DIR = join(BACKEND_DIR, "testdata");
 const FRONTEND_DIST = join(PROJECT_ROOT, "frontend", "dist");
 const BINARY_NAME = process.platform === "win32" ? "pwsafe-service.exe" : "pwsafe-service";
 
+export interface ServerOptions {
+  syncInterval?: string; // e.g., "3s", "15m"
+}
+
 export class ServerInstance {
   private process: ChildProcess | null = null;
   private tempDir: string = "";
+  private options: ServerOptions;
 
   public baseUrl: string = "";
   public apiToken: string = "";
   public port: number = 0;
+
+  constructor(options: ServerOptions = {}) {
+    this.options = options;
+  }
 
   async start(): Promise<void> {
     this.tempDir = await mkdtemp(join(tmpdir(), "pwsafe-e2e-"));
@@ -42,12 +51,15 @@ export class ServerInstance {
     this.baseUrl = `http://localhost:${port}`;
 
     // Write settings.json with mock provider enabled and correct base URL
-    const settings = {
+    const settings: Record<string, unknown> = {
       baseUrl: this.baseUrl,
       providers: {
         mock: {},
       },
     };
+    if (this.options.syncInterval) {
+      settings.syncInterval = this.options.syncInterval;
+    }
     await writeFile(join(configDir, "settings.json"), JSON.stringify(settings, null, 2));
 
     this.process = spawn(binaryPath, [], {
