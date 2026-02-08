@@ -34,7 +34,9 @@ jobs:
 
       - name: Run tests
         working-directory: ./backend
-        run: go test -v -race -coverprofile=coverage.out ./...
+        run: |
+          mkdir -p /tmp/unit-coverdata
+          go test -v -race -cover ./... -args -test.gocoverdir="/tmp/unit-coverdata"
 
       - name: Build
         working-directory: ./backend
@@ -44,5 +46,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: backend-coverage
-          path: backend/coverage.out
+          path: /tmp/unit-coverdata/
           retention-days: 1

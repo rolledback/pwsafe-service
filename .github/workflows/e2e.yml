@@ -52,14 +52,12 @@ jobs:
           GOCOVERDIR: /tmp/e2e-coverdata
         run: npm test
 
-      - name: Convert coverage data
+      - name: Report e2e coverage
         if: always()
-        working-directory: ./backend
         run: |
           if [ -d /tmp/e2e-coverdata ] && [ "$(ls -A /tmp/e2e-coverdata 2>/dev/null)" ]; then
-            go tool covdata textfmt -i=/tmp/e2e-coverdata -o=../e2e-coverage.out
             echo "=== E2E Coverage ==="
-            go tool cover -func=../e2e-coverage.out | tail -1
+            go tool covdata percent -i=/tmp/e2e-coverdata
           else
             echo "No coverage data produced"
           fi
@@ -69,6 +67,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-coverage
-          path: e2e-coverage.out
+          path: /tmp/e2e-coverdata/
           retention-days: 1
           if-no-files-found: ignore

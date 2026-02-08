@@ -36,50 +36,31 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: backend-coverage
-          path: coverage/
+          path: coverage/unit/
 
       - name: Download e2e coverage
         uses: actions/download-artifact@v4
         with:
           name: e2e-coverage
-          path: coverage/
+          path: coverage/e2e/
 
       - name: Merge and report coverage
-        working-directory: ./backend
         run: |
-          show_coverage() {
-            # Show per-package coverage + total
-            go tool cover -func="$1" | awk '
-              {
-                # Extract package from file path
-                split($1, parts, "/")
-                pkg = ""
-                for (i = 1; i < length(parts); i++) pkg = pkg parts[i] "/"
-                if (pkg != last_pkg && last_pkg != "") {
-                  printf "  %-60s %s\n", last_pkg, last_pct
-                }
-                last_pkg = pkg; last_pct = $NF
-              }
-              END {
-                if (last_pkg != "") printf "  %-60s %s\n", last_pkg, last_pct
-              }
-            '
-            echo ""
-            go tool cover -func="$1" | tail -1
+          covpercent() {
+            go tool covdata percent -i="$1" | sed 's/\t\tgithub/\n\tgithub/g' | grep -v onedrive | grep "coverage:"
           }
 
           echo "=== Backend Unit Test Coverage ==="
-          show_coverage ../coverage/coverage.out
+          covpercent ./coverage/unit
           echo ""
-          if [ -f ../coverage/e2e-coverage.out ]; then
+
+          if [ -d ./coverage/e2e ] && [ "$(ls -A ./coverage/e2e 2>/dev/null)" ]; then
             echo "=== E2E Test Coverage ==="
-            show_coverage ../coverage/e2e-coverage.out
+            covpercent ./coverage/e2e
             echo ""
+
             echo "=== Combined Coverage ==="
-            head -1 ../coverage/coverage.out > ../coverage/combined.out
-            tail -n +2 ../coverage/coverage.out >> ../coverage/combined.out
-            tail -n +2 ../coverage/e2e-coverage.out >> ../coverage/combined.out
-            show_coverage ../coverage/combined.out
+            covpercent ./coverage/unit,./coverage/e2e
           else
             echo "No e2e coverage data available"
           fi
