@@ -66,31 +66,25 @@ jobs:
           git tag v${{ steps.version.outputs.version }}
           git push origin v${{ steps.version.outputs.version }}
 
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Find previous tag
+          PREV_TAG=$(git tag --sort=-v:refname | grep -v "v${{ steps.version.outputs.version }}" | head -1)
+          if [ -z "$PREV_TAG" ]; then
+            # First release — list all commits
+            CHANGELOG=$(git log --oneline --format="- %s ([%h](https://github.com/${{ github.repository }}/commit/%H))")
+          else
+            CHANGELOG=$(git log "${PREV_TAG}..HEAD" --oneline --format="- %s ([%h](https://github.com/${{ github.repository }}/commit/%H))")
+          fi
+          # Write to file to preserve newlines
+          echo "$CHANGELOG" > /tmp/changelog.md
+          echo "Generated changelog from ${PREV_TAG:-beginning}..HEAD"
+          cat /tmp/changelog.md
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: v${{ steps.version.outputs.version }}
-          generate_release_notes: true
-          body: |
-            ## Docker Image
-            
-            Pull the image:
-            ```bash
-            docker pull ghcr.io/${{ github.repository }}:v${{ steps.version.outputs.version }}
-            ```
-            
-            Or use latest:
-            ```bash
-            docker pull ghcr.io/${{ github.repository }}:latest
-            ```
-            
-            Run the container:
-            ```bash
-            docker run -d \
-              -p 8080:8080 \
-              -v /path/to/safes:/safes:ro \
-              ghcr.io/${{ github.repository }}:latest
-            ```
-            
-            Then access the web interface at http://localhost:8080/web/
+          body_path: /tmp/changelog.md
