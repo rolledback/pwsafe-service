@@ -11,5 +11,9 @@ fi
 cd frontend && npm run format:fix
 cd ..
 
+# Run prettier format on e2e
+cd e2e && npm run format:fix
+cd ..
+
 # Re-add only the files that were originally staged
 echo "$STAGED_FILES" | xargs -d '\n' git add

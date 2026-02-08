@@ -1,0 +1,50 @@
+name: E2E Tests
+
+on:
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'e2e/**'
+      - '.github/workflows/e2e.yml'
+  push:
+    branches:
+      - main
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.5'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: |
+            frontend/package-lock.json
+            e2e/package-lock.json
+
+      - name: Build backend
+        working-directory: ./backend
+        run: go build -o pwsafe-service cmd/pwsafe-service/main.go
+
+      - name: Build frontend
+        working-directory: ./frontend
+        run: npm ci && npm run build
+
+      - name: Install e2e dependencies
+        working-directory: ./e2e
+        run: npm ci
+
+      - name: Run e2e tests
+        working-directory: ./e2e
+        run: npm test
