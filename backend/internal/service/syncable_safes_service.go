@@ -119,8 +119,13 @@ func (s *SyncableSafesService) ListFiles(ctx context.Context) ([]SelectedFile, e
 	return result, nil
 }
 
-// SaveFiles persists file selection state
+// SaveFiles persists file selection state after validating paths
 func (s *SyncableSafesService) SaveFiles(files []SelectedFile) error {
+	for _, f := range files {
+		if _, err := s.getLocalPath(f); err != nil {
+			return fmt.Errorf("invalid file path: %w", err)
+		}
+	}
 	config, _ := s.loadConfig()
 	config.Files = files
 	return s.saveConfig(config)

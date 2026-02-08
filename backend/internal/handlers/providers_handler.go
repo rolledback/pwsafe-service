@@ -213,7 +213,7 @@ func (h *ProvidersHandler) saveFiles(w http.ResponseWriter, r *http.Request, svc
 
 	if err := svc.SaveFiles(req.Files); err != nil {
 		log.Printf("Error saving %s files: %v", providerID, err)
-		h.respondError(w, "Failed to save files", http.StatusInternalServerError)
+		h.respondError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
