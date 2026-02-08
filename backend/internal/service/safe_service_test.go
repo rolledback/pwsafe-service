@@ -377,6 +377,134 @@ func TestListSafes_SkipsHiddenFilesInRoot(t *testing.T) {
 	}
 }
 
+func TestComputeID_Deterministic(t *testing.T) {
+	service := NewSafeService(t.TempDir())
+
+	id1 := service.ComputeID("static", "simple.psafe3")
+	id2 := service.ComputeID("static", "simple.psafe3")
+
+	if id1 != id2 {
+		t.Errorf("Expected deterministic IDs, got %q and %q", id1, id2)
+	}
+}
+
+func TestComputeID_DifferentInputs(t *testing.T) {
+	service := NewSafeService(t.TempDir())
+
+	id1 := service.ComputeID("static", "simple.psafe3")
+	id2 := service.ComputeID("static", "three.psafe3")
+	id3 := service.ComputeID("onedrive", "simple.psafe3")
+
+	if id1 == id2 {
+		t.Errorf("Expected different IDs for different filenames, both got %q", id1)
+	}
+	if id1 == id3 {
+		t.Errorf("Expected different IDs for different providers, both got %q", id1)
+	}
+}
+
+func TestComputeID_Length(t *testing.T) {
+	service := NewSafeService(t.TempDir())
+
+	cases := []struct {
+		provider string
+		path     string
+	}{
+		{"static", "simple.psafe3"},
+		{"onedrive", "Documents/Passwords/work.psafe3"},
+		{"gdrive", "a.psafe3"},
+	}
+
+	for _, tc := range cases {
+		id := service.ComputeID(tc.provider, tc.path)
+		if len(id) != 16 {
+			t.Errorf("ComputeID(%q, %q) = %q (len %d), expected 16 hex chars", tc.provider, tc.path, id, len(id))
+		}
+	}
+}
+
+func TestValidateSafePath_Valid(t *testing.T) {
+	tmpDir := testutil.SetupTestDataDir(t)
+	service := NewSafeService(tmpDir)
+
+	absPath, err := service.ValidateSafePath("/data/static/simple.psafe3")
+	if err != nil {
+		t.Fatalf("ValidateSafePath failed: %v", err)
+	}
+
+	expected := filepath.Join(tmpDir, "static", "simple.psafe3")
+	if absPath != expected {
+		t.Errorf("Expected %q, got %q", expected, absPath)
+	}
+}
+
+func TestValidateSafePath_Traversal(t *testing.T) {
+	tmpDir := testutil.SetupEmptyDataDir(t)
+	service := NewSafeService(tmpDir)
+
+	_, err := service.ValidateSafePath("/data/static/../../etc/passwd")
+	if err == nil {
+		t.Error("Expected error for directory traversal path")
+	}
+}
+
+func TestValidateSafePath_NonDataPath(t *testing.T) {
+	tmpDir := testutil.SetupEmptyDataDir(t)
+	service := NewSafeService(tmpDir)
+
+	_, err := service.ValidateSafePath("/other/static/simple.psafe3")
+	if err == nil {
+		t.Error("Expected error for path not starting with /data/")
+	}
+}
+
+func TestValidateSafePath_NonexistentFile(t *testing.T) {
+	tmpDir := testutil.SetupEmptyDataDir(t)
+	service := NewSafeService(tmpDir)
+
+	_, err := service.ValidateSafePath("/data/static/nonexistent.psafe3")
+	if err == nil {
+		t.Error("Expected error for nonexistent file")
+	}
+}
+
+func TestResolvePath_CacheHit(t *testing.T) {
+	tmpDir := testutil.SetupTestDataDir(t)
+	service := NewSafeService(tmpDir)
+
+	// Populate cache via ListSafes
+	safes, err := service.ListSafes()
+	if err != nil {
+		t.Fatalf("ListSafes failed: %v", err)
+	}
+
+	if len(safes) == 0 {
+		t.Fatal("Expected at least one safe")
+	}
+
+	// Use the first safe's ID to resolve
+	ref, err := service.ResolvePath(safes[0].ID)
+	if err != nil {
+		t.Fatalf("ResolvePath failed: %v", err)
+	}
+
+	if ref.Path != safes[0].Path {
+		t.Errorf("Expected path %q, got %q", safes[0].Path, ref.Path)
+	}
+	if ref.Provider != safes[0].Provider {
+		t.Errorf("Expected provider %q, got %q", safes[0].Provider, ref.Provider)
+	}
+}
+
+func TestResolvePath_CacheMiss(t *testing.T) {
+	service := NewSafeService(t.TempDir())
+
+	_, err := service.ResolvePath("nonexistent-id")
+	if err == nil {
+		t.Error("Expected error for unknown ID")
+	}
+}
+
 func TestListSafes_SkipsHiddenDirectories(t *testing.T) {
 	tmpDir := testutil.SetupEmptyDataDir(t)
 
