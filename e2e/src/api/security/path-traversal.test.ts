@@ -63,12 +63,9 @@ describe("Path Traversal Protection", () => {
     expect(traversalResult).toBeUndefined();
   }, 15000);
 
-  it("DELETE static file with encoded traversal is blocked", async () => {
-    const resp = await api.raw("DELETE", "/api/providers/static/files/..%2F..%2Ftest.psafe3");
-    // Traversal is sanitized — file doesn't exist at the sanitized path
-    // The key assertion is that it does NOT return 200/success
-    expect([400, 404]).toContain(resp.status);
-    // Verify no file outside static dir was affected
+  it("DELETE with traversal-like ID returns 404 (ID-based, no path exposure)", async () => {
+    const resp = await api.raw("DELETE", "/api/providers/static/files/..%2F..%2Ftest");
+    expect(resp.status).toBe(404);
     const body = await resp.json();
     expect(body.error).toBeTruthy();
   });

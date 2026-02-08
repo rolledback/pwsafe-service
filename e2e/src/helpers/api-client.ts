@@ -110,7 +110,7 @@ export class ApiClient {
     return this.raw("POST", path, { body: form as any });
   }
 
-  async deleteStaticSafe(filename: string): Promise<Response> {
-    return this.raw("DELETE", `/api/providers/static/files/${encodeURIComponent(filename)}`);
+  async deleteStaticSafe(id: string): Promise<Response> {
+    return this.raw("DELETE", `/api/providers/static/files/${id}`);
   }
 }

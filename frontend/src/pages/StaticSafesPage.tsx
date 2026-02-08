@@ -100,7 +100,7 @@ function StaticSafesPage() {
     setError(null);
 
     try {
-      await api.deleteStaticSafe(safe.name);
+      await api.deleteStaticSafe(safe.id);
       await fetchSafes();
     } catch (err) {
       console.error("Failed to delete safe:", err);

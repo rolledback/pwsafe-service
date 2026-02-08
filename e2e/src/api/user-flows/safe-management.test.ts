@@ -58,19 +58,25 @@ describe("Safe upload and delete management", () => {
     // Allow general rate limiter to refill after previous requests
     await sleep(500);
 
-    const resp = await api.deleteStaticSafe(uploadName);
+    // Find the safe ID for the uploaded file
+    const safes = await api.listSafes();
+    const uploaded = safes.find((s) => s.name === uploadName);
+    expect(uploaded).toBeDefined();
+
+    const resp = await api.deleteStaticSafe(uploaded!.id);
 
     expect(resp.status).toBe(200);
     const body = await resp.json();
     expect(body.success).toBe(true);
 
-    const safes = await api.listSafes();
-    const names = safes.map((s) => s.name);
+    const safesAfter = await api.listSafes();
+    const names = safesAfter.map((s) => s.name);
     expect(names).not.toContain(uploadName);
   });
 
   it("returns error when deleting a non-existent safe", async () => {
-    const resp = await api.deleteStaticSafe("does-not-exist.psafe3");
+    await sleep(500);
+    const resp = await api.deleteStaticSafe("0000000000000000");
 
     expect(resp.status).toBe(404);
     const body = await resp.json();

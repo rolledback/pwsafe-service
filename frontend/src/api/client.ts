@@ -235,8 +235,8 @@ export const api = {
     return { success: true, name: data.name };
   },
 
-  async deleteStaticSafe(filename: string): Promise<{ success: boolean }> {
-    const response = await fetch(`${API_BASE_URL}/providers/static/files/${encodeURIComponent(filename)}`, {
+  async deleteStaticSafe(id: string): Promise<{ success: boolean }> {
+    const response = await fetch(`${API_BASE_URL}/providers/static/files/${id}`, {
       method: "DELETE",
       headers: apiHeaders(),
     });

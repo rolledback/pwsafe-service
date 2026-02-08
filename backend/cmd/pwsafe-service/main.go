@@ -89,7 +89,7 @@ func main() {
 	providersHandler := handlers.NewProvidersHandler(services, safeService)
 
 	// Create static provider handler (for upload/delete of static safes)
-	staticProviderHandler := handlers.NewStaticProviderHandler(cfg.DataDirectory)
+	staticProviderHandler := handlers.NewStaticProviderHandler(cfg.DataDirectory, safeService)
 
 	// General rate limiter
 	rateLimiter := middleware.NewRateLimiter(ctx, rate.Limit(5), 5)

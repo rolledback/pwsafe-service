@@ -11,23 +11,26 @@ import (
 	"strings"
 
 	"github.com/rolledback/pwsafe-service/backend/internal/models"
+	"github.com/rolledback/pwsafe-service/backend/internal/service"
 )
 
 // StaticProviderHandler handles HTTP requests for static safe operations (upload, delete)
 type StaticProviderHandler struct {
-	staticDir string // data/static directory
+	staticDir   string // data/static directory
+	safeService *service.SafeService
 }
 
 // NewStaticProviderHandler creates a new static provider handler
 // dataDir is the base data directory; static files go in dataDir/static
-func NewStaticProviderHandler(dataDir string) *StaticProviderHandler {
+func NewStaticProviderHandler(dataDir string, safeService *service.SafeService) *StaticProviderHandler {
 	staticDir := filepath.Join(dataDir, "static")
 	// Auto-create static directory
 	if err := os.MkdirAll(staticDir, 0700); err != nil {
 		log.Printf("Warning: failed to create static directory: %v", err)
 	}
 	return &StaticProviderHandler{
-		staticDir: staticDir,
+		staticDir:   staticDir,
+		safeService: safeService,
 	}
 }
 
@@ -126,60 +129,58 @@ func (h *StaticProviderHandler) uploadFile(w http.ResponseWriter, r *http.Reques
 	}
 
 	log.Printf("Uploaded static safe: %s", filename)
+
+	// Refresh cache so new safe gets an ID
+	if err := h.safeService.RefreshCache(); err != nil {
+		log.Printf("Warning: failed to refresh safe ID cache after upload: %v", err)
+	}
+
 	h.respondJSON(w, map[string]interface{}{
 		"success": true,
 		"name":    filename,
 	}, http.StatusOK)
 }
 
-func (h *StaticProviderHandler) deleteFile(w http.ResponseWriter, r *http.Request, filename string) {
-	// Sanitize filename to prevent path traversal
-	filename = h.sanitizeFilename(filename)
-	if filename == "" {
-		h.respondError(w, "Invalid filename", http.StatusBadRequest)
+func (h *StaticProviderHandler) deleteFile(w http.ResponseWriter, r *http.Request, safeID string) {
+	if safeID == "" {
+		h.respondError(w, "Safe ID required", http.StatusBadRequest)
 		return
 	}
 
-	// Validate extension
-	if !strings.HasSuffix(strings.ToLower(filename), ".psafe3") {
-		h.respondError(w, "Only .psafe3 files can be deleted", http.StatusBadRequest)
-		return
-	}
-
-	destPath := filepath.Join(h.staticDir, filename)
-
-	// Security: ensure the resolved path is still within staticDir
-	absPath, err := filepath.Abs(destPath)
+	// Resolve ID to path
+	ref, err := h.safeService.ResolvePath(safeID)
 	if err != nil {
-		h.respondError(w, "Invalid filename", http.StatusBadRequest)
+		h.respondError(w, "Safe not found", http.StatusNotFound)
 		return
 	}
 
-	absStaticDir, err := filepath.Abs(h.staticDir)
+	// Only allow deleting static provider safes
+	if ref.Provider != "static" {
+		h.respondError(w, "Can only delete static safes", http.StatusBadRequest)
+		return
+	}
+
+	// Validate and get absolute path
+	absPath, err := h.safeService.ValidateSafePath(ref.Path)
 	if err != nil {
-		h.respondError(w, "Server configuration error", http.StatusInternalServerError)
-		return
-	}
-
-	if !strings.HasPrefix(absPath, absStaticDir+string(filepath.Separator)) {
-		h.respondError(w, "Invalid filename", http.StatusBadRequest)
-		return
-	}
-
-	// Check if file exists
-	if _, err := os.Stat(destPath); os.IsNotExist(err) {
-		h.respondError(w, "File not found", http.StatusNotFound)
+		h.respondError(w, "Invalid safe path", http.StatusBadRequest)
 		return
 	}
 
 	// Delete the file
-	if err := os.Remove(destPath); err != nil {
-		log.Printf("Error deleting file %s: %v", destPath, err)
+	if err := os.Remove(absPath); err != nil {
+		log.Printf("Error deleting file %s: %v", absPath, err)
 		h.respondError(w, "Failed to delete file", http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("Deleted static safe: %s", filename)
+	log.Printf("Deleted static safe: %s (id: %s)", ref.Path, safeID)
+
+	// Refresh cache to remove deleted safe
+	if err := h.safeService.RefreshCache(); err != nil {
+		log.Printf("Warning: failed to refresh safe ID cache after delete: %v", err)
+	}
+
 	h.respondJSON(w, map[string]bool{"success": true}, http.StatusOK)
 }
 
