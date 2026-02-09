@@ -10,6 +10,8 @@ describe("Rate Limiting", () => {
     server = new ServerInstance();
     await server.start();
     api = new ApiClient(server.baseUrl, server.apiToken);
+    // Wait for strict rate limiter to refill after auth setup call during start
+    await new Promise((r) => setTimeout(r, 5500));
   });
 
   afterAll(async () => {

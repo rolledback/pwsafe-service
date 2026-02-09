@@ -1,95 +1,90 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { ServerInstance } from "../../helpers/server";
-import { ApiClient } from "../../helpers/api-client";
+import { it, expect, describe } from "vitest";
+import { describeDualMode } from "../../helpers/dual-mode";
 
-describe("Provider sync behavior", { timeout: 60_000 }, () => {
-  let server: ServerInstance;
-  let api: ApiClient;
+describeDualMode("Provider sync behavior", { syncInterval: "3s" }, (getApi, getServer) => {
+  describe("sync", { timeout: 60_000 }, () => {
+    it("connect mock provider", async () => {
+      const api = getApi();
+      const server = getServer();
+      const { url } = await api.getProviderAuthUrl("mock");
+      await api.raw("GET", url.replace(server.baseUrl, ""));
+    });
 
-  beforeAll(async () => {
-    server = new ServerInstance({ syncInterval: "3s" });
-    await server.start();
-    api = new ApiClient(server.baseUrl, server.apiToken);
+    it("syncs selected files and they appear in safe list", async () => {
+      const api = getApi();
+      // Get available files from mock provider
+      const { files } = await api.getProviderFiles("mock");
+      expect(files.length).toBeGreaterThanOrEqual(2);
 
-    // Connect the mock provider
-    const { url } = await api.getProviderAuthUrl("mock");
-    await api.raw("GET", url.replace(server.baseUrl, ""));
-  });
+      // Select all files
+      const selected = files.map((f) => ({ ...f, selected: true }));
+      await api.saveProviderFiles("mock", selected);
 
-  afterAll(async () => {
-    await server.stop();
-  });
+      // Trigger manual sync
+      const syncResult = await api.syncProvider("mock");
+      expect(syncResult.results.length).toBeGreaterThan(0);
+      for (const r of syncResult.results) {
+        expect(r.success).toBe(true);
+      }
 
-  it("syncs selected files and they appear in safe list", async () => {
-    // Get available files from mock provider
-    const { files } = await api.getProviderFiles("mock");
-    expect(files.length).toBeGreaterThanOrEqual(2);
+      // Verify synced files appear in safe list
+      const safes = await api.listSafes();
+      const mockSafes = safes.filter((s) => s.provider === "mock");
+      expect(mockSafes.length).toBe(files.length);
+    });
 
-    // Select all files
-    const selected = files.map((f) => ({ ...f, selected: true }));
-    await api.saveProviderFiles("mock", selected);
+    it("deselecting files and syncing removes them", async () => {
+      const api = getApi();
+      // Get current files
+      const { files } = await api.getProviderFiles("mock");
 
-    // Trigger manual sync
-    const syncResult = await api.syncProvider("mock");
-    expect(syncResult.results.length).toBeGreaterThan(0);
-    for (const r of syncResult.results) {
-      expect(r.success).toBe(true);
-    }
+      // Deselect all files
+      const deselected = files.map((f) => ({ ...f, selected: false }));
+      await api.saveProviderFiles("mock", deselected);
 
-    // Verify synced files appear in safe list
-    const safes = await api.listSafes();
-    const mockSafes = safes.filter((s) => s.provider === "mock");
-    expect(mockSafes.length).toBe(files.length);
-  });
+      // Sync to clean up
+      await api.syncProvider("mock");
 
-  it("deselecting files and syncing removes them", async () => {
-    // Get current files
-    const { files } = await api.getProviderFiles("mock");
+      // Verify mock files are gone from safe list
+      const safes = await api.listSafes();
+      const mockSafes = safes.filter((s) => s.provider === "mock");
+      expect(mockSafes.length).toBe(0);
+    });
 
-    // Deselect all files
-    const deselected = files.map((f) => ({ ...f, selected: false }));
-    await api.saveProviderFiles("mock", deselected);
+    it("re-select and verify periodic sync picks up files automatically", async () => {
+      const api = getApi();
+      // Select files again
+      const { files } = await api.getProviderFiles("mock");
+      const selected = files.map((f) => ({ ...f, selected: true }));
+      await api.saveProviderFiles("mock", selected);
 
-    // Sync to clean up
-    await api.syncProvider("mock");
+      // Do NOT manually sync — wait for periodic sync (3s interval + buffer)
+      await new Promise((r) => setTimeout(r, 5000));
 
-    // Verify mock files are gone from safe list
-    const safes = await api.listSafes();
-    const mockSafes = safes.filter((s) => s.provider === "mock");
-    expect(mockSafes.length).toBe(0);
-  });
+      // Verify files appeared via periodic sync
+      const safes = await api.listSafes();
+      const mockSafes = safes.filter((s) => s.provider === "mock");
+      expect(mockSafes.length).toBeGreaterThan(0);
+    });
 
-  it("re-select and verify periodic sync picks up files automatically", async () => {
-    // Select files again
-    const { files } = await api.getProviderFiles("mock");
-    const selected = files.map((f) => ({ ...f, selected: true }));
-    await api.saveProviderFiles("mock", selected);
+    it("syncs only selected files when mix of selected/unselected", async () => {
+      const api = getApi();
+      const { files } = await api.getProviderFiles("mock");
+      expect(files.length).toBeGreaterThanOrEqual(2);
 
-    // Do NOT manually sync — wait for periodic sync (3s interval + buffer)
-    await new Promise((r) => setTimeout(r, 5000));
+      // Select only the first file
+      const mixed = files.map((f, i) => ({ ...f, selected: i === 0 }));
+      await api.saveProviderFiles("mock", mixed);
 
-    // Verify files appeared via periodic sync
-    const safes = await api.listSafes();
-    const mockSafes = safes.filter((s) => s.provider === "mock");
-    expect(mockSafes.length).toBeGreaterThan(0);
-  });
+      // Sync
+      const syncResult = await api.syncProvider("mock");
+      const successful = syncResult.results.filter((r) => r.success);
+      expect(successful.length).toBe(1);
 
-  it("syncs only selected files when mix of selected/unselected", async () => {
-    const { files } = await api.getProviderFiles("mock");
-    expect(files.length).toBeGreaterThanOrEqual(2);
-
-    // Select only the first file
-    const mixed = files.map((f, i) => ({ ...f, selected: i === 0 }));
-    await api.saveProviderFiles("mock", mixed);
-
-    // Sync
-    const syncResult = await api.syncProvider("mock");
-    const successful = syncResult.results.filter((r) => r.success);
-    expect(successful.length).toBe(1);
-
-    // Verify only one mock safe in list
-    const safes = await api.listSafes();
-    const mockSafes = safes.filter((s) => s.provider === "mock");
-    expect(mockSafes.length).toBe(1);
+      // Verify only one mock safe in list
+      const safes = await api.listSafes();
+      const mockSafes = safes.filter((s) => s.provider === "mock");
+      expect(mockSafes.length).toBe(1);
+    });
   });
 });

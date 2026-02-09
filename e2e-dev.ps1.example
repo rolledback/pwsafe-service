@@ -5,6 +5,9 @@ $ErrorActionPreference = "Stop"
 $CONFIG_DIR = "/some/folder/config" # Path to dev config directory (contains settings.json)
 $DATA_DIR = "/some/folder/data"     # Path to dev data directory (contains static/ and provider folders)
 
+# On first start, visit the UI in your browser to choose a security mode.
+# To skip setup for dev, add "auth": { "mode": "unsecured" } to your settings.json.
+
 # This value usually does not need to be changed
 $STATIC_DIR = "../frontend/dist"    # Path to frontend build output
 

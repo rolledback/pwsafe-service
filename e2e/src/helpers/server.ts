@@ -11,6 +11,10 @@ const BINARY_NAME = process.platform === "win32" ? "pwsafe-service.exe" : "pwsaf
 
 export interface ServerOptions {
   syncInterval?: string; // e.g., "3s", "15m"
+  authMode?: "unsecured" | "secured";
+  password?: string;
+  sessionTimeout?: string; // e.g., "2s", "3m"
+  skipAuthSetup?: boolean; // skip auto-setup (for auth-setup tests)
 }
 
 export class ServerInstance {
@@ -48,7 +52,7 @@ export class ServerInstance {
     // Find a free port before starting so we can set baseUrl in settings
     const port = await this.findFreePort();
     this.port = port;
-    this.baseUrl = `http://localhost:${port}`;
+    this.baseUrl = `http://127.0.0.1:${port}`;
 
     // Write settings.json with mock provider enabled and correct base URL
     const settings: Record<string, unknown> = {
@@ -59,6 +63,9 @@ export class ServerInstance {
     };
     if (this.options.syncInterval) {
       settings.syncInterval = this.options.syncInterval;
+    }
+    if (this.options.sessionTimeout) {
+      settings.auth = { sessionTimeout: this.options.sessionTimeout };
     }
     await writeFile(join(configDir, "settings.json"), JSON.stringify(settings, null, 2));
 
@@ -79,6 +86,21 @@ export class ServerInstance {
 
     // Extract API token from served HTML
     await this.extractToken();
+
+    // Setup auth mode (default to "unsecured" so existing tests keep working)
+    if (!this.options.skipAuthSetup) {
+      const mode = this.options.authMode ?? "unsecured";
+      const setupBody: Record<string, string> = { mode };
+      if (mode === "secured" && this.options.password) {
+        setupBody.password = this.options.password;
+      }
+      const setupResp = await fetch(`${this.baseUrl}/api/auth/setup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-PWSAFE-Token": this.apiToken },
+        body: JSON.stringify(setupBody),
+      });
+      if (!setupResp.ok) throw new Error(`Auth setup failed: ${await setupResp.text()}`);
+    }
   }
 
   async stop(): Promise<void> {

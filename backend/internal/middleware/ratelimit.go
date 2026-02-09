@@ -3,7 +3,6 @@ package middleware
 import (
 	"context"
 	"log"
-	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -73,10 +72,7 @@ func (rl *RateLimiter) cleanup(ctx context.Context) {
 
 func (rl *RateLimiter) Limit(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ip, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			ip = r.RemoteAddr
-		}
+		ip := GetClientIP(r)
 
 		limiter := rl.getVisitor(ip)
 		if !limiter.Allow() {

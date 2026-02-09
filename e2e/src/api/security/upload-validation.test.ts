@@ -1,22 +1,9 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { ServerInstance } from "../../helpers/server";
-import { ApiClient } from "../../helpers/api-client";
+import { it, expect } from "vitest";
+import { describeDualMode } from "../../helpers/dual-mode";
 
-describe("Upload Validation", () => {
-  let server: ServerInstance;
-  let api: ApiClient;
-
-  beforeAll(async () => {
-    server = new ServerInstance();
-    await server.start();
-    api = new ApiClient(server.baseUrl, server.apiToken);
-  });
-
-  afterAll(async () => {
-    await server.stop();
-  });
-
+describeDualMode("Upload Validation", {}, (getApi) => {
   it("rejects upload with .txt extension", async () => {
+    const api = getApi();
     const content = Buffer.from("fake content");
     const resp = await api.uploadStaticSafe("test.txt", content);
     expect(resp.status).toBe(400);
@@ -25,6 +12,7 @@ describe("Upload Validation", () => {
   });
 
   it("accepts upload with .psafe3 extension", async () => {
+    const api = getApi();
     const content = Buffer.from("fake psafe3 content");
     const resp = await api.uploadStaticSafe("test-upload.psafe3", content);
     // Should succeed (200) or conflict (409 if already exists)
@@ -32,12 +20,14 @@ describe("Upload Validation", () => {
   });
 
   it("rejects upload with no extension", async () => {
+    const api = getApi();
     const content = Buffer.from("fake content");
     const resp = await api.uploadStaticSafe("noextension", content);
     expect(resp.status).toBe(400);
   });
 
   it("rejects upload with .psafe3.txt double extension", async () => {
+    const api = getApi();
     const content = Buffer.from("fake content");
     const resp = await api.uploadStaticSafe("test.psafe3.txt", content);
     expect(resp.status).toBe(400);

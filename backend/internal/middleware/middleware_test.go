@@ -4,9 +4,13 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/rolledback/pwsafe-service/backend/internal/auth"
+	"github.com/rolledback/pwsafe-service/backend/internal/config"
 	"golang.org/x/time/rate"
 )
 
@@ -83,6 +87,7 @@ func TestRequireToken_OptionsSkipped(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	req := httptest.NewRequest("OPTIONS", "/api/safes", nil)
+	req.Header.Set("X-PWSAFE-Token", "wrong-token")
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 	if !called {
@@ -100,6 +105,7 @@ func TestRequireToken_CallbackSkipped(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	req := httptest.NewRequest("GET", "/api/providers/mock/auth/callback", nil)
+	req.Header.Set("X-PWSAFE-Token", "wrong-token")
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 	if !called {
@@ -266,5 +272,241 @@ func TestLogging_RecordsStatusCode(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
 		t.Errorf("expected 201, got %d", rec.Code)
+	}
+}
+
+// --- RequireAuth tests ---
+
+func newTestAuthService(t *testing.T) *auth.AuthService {
+	t.Helper()
+	dataDir := t.TempDir()
+	configDir := t.TempDir()
+	os.WriteFile(filepath.Join(configDir, "settings.json"), []byte("{}"), 0644)
+	return auth.NewAuthService(dataDir, configDir, &config.Settings{})
+}
+
+func TestRequireAuth_Unset_Returns503(t *testing.T) {
+	svc := newTestAuthService(t)
+	handler := RequireAuth(svc, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	req := httptest.NewRequest("GET", "/api/safes", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503, got %d", rec.Code)
+	}
+}
+
+func TestRequireAuth_Unsecured_Passthrough(t *testing.T) {
+	svc := newTestAuthService(t)
+	svc.Setup("unsecured", "")
+	called := false
+	handler := RequireAuth(svc, func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+	req := httptest.NewRequest("GET", "/api/safes", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+	if !called {
+		t.Error("expected next handler to be called")
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestRequireAuth_Secured_ValidSession(t *testing.T) {
+	svc := newTestAuthService(t)
+	svc.Setup("secured", "pass")
+	sessionID, err := svc.Login("pass", "127.0.0.1")
+	if err != nil {
+		t.Fatalf("Login failed: %v", err)
+	}
+	called := false
+	handler := RequireAuth(svc, func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+	req := httptest.NewRequest("GET", "/api/safes", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	req.AddCookie(&http.Cookie{Name: "pwsafe_session", Value: sessionID})
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+	if !called {
+		t.Error("expected next handler to be called for valid session")
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestRequireAuth_Secured_NoSession(t *testing.T) {
+	svc := newTestAuthService(t)
+	svc.Setup("secured", "pass")
+	handler := RequireAuth(svc, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	req := httptest.NewRequest("GET", "/api/safes", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestRequireAuth_Secured_ExpiredSession(t *testing.T) {
+	dataDir := t.TempDir()
+	configDir := t.TempDir()
+	os.WriteFile(filepath.Join(configDir, "settings.json"), []byte("{}"), 0644)
+	settings := &config.Settings{Auth: &config.AuthConfig{SessionTimeout: "50ms"}}
+	svc := auth.NewAuthService(dataDir, configDir, settings)
+	svc.Setup("secured", "pass")
+	sessionID, err := svc.Login("pass", "127.0.0.1")
+	if err != nil {
+		t.Fatalf("Login failed: %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	handler := RequireAuth(svc, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	req := httptest.NewRequest("GET", "/api/safes", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	req.AddCookie(&http.Cookie{Name: "pwsafe_session", Value: sessionID})
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestRequireAuth_BannedIP(t *testing.T) {
+	svc := newTestAuthService(t)
+	svc.Setup("unsecured", "")
+
+	ip := "10.0.0.99"
+	for i := 0; i < 5; i++ {
+		svc.RecordRateLimitHit(ip)
+	}
+
+	handler := RequireAuth(svc, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	req := httptest.NewRequest("GET", "/api/safes", nil)
+	req.RemoteAddr = ip + ":12345"
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", rec.Code)
+	}
+}
+
+func TestRequireAuth_OPTIONS_Bypass(t *testing.T) {
+	svc := newTestAuthService(t)
+	svc.Setup("secured", "pass")
+	handler := RequireAuth(svc, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// Prove auth IS enforced: GET without session → 401
+	getReq := httptest.NewRequest("GET", "/api/safes", nil)
+	getReq.RemoteAddr = "127.0.0.1:12345"
+	getRec := httptest.NewRecorder()
+	handler(getRec, getReq)
+	if getRec.Code != http.StatusUnauthorized {
+		t.Errorf("GET without session should be 401, got %d", getRec.Code)
+	}
+
+	// Prove OPTIONS bypasses auth: same conditions → 200
+	optReq := httptest.NewRequest("OPTIONS", "/api/safes", nil)
+	optReq.RemoteAddr = "127.0.0.1:12345"
+	optRec := httptest.NewRecorder()
+	handler(optRec, optReq)
+	if optRec.Code != http.StatusOK {
+		t.Errorf("OPTIONS should bypass auth and return 200, got %d", optRec.Code)
+	}
+}
+
+// --- GetClientIP tests ---
+
+func TestGetClientIP_WithPort(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "192.168.1.1:1234"
+	if ip := GetClientIP(req); ip != "192.168.1.1" {
+		t.Errorf("expected '192.168.1.1', got %q", ip)
+	}
+}
+
+func TestGetClientIP_WithoutPort(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "192.168.1.1"
+	if ip := GetClientIP(req); ip != "192.168.1.1" {
+		t.Errorf("expected '192.168.1.1', got %q", ip)
+	}
+}
+
+func TestGetClientIP_IPv6WithPort(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "[::1]:1234"
+	if ip := GetClientIP(req); ip != "::1" {
+		t.Errorf("expected '::1', got %q", ip)
+	}
+}
+
+func TestGetClientIP_IPv6WithoutPort(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "::1"
+	if ip := GetClientIP(req); ip != "::1" {
+		t.Errorf("expected '::1', got %q", ip)
+	}
+}
+
+func TestGetClientIP_Empty(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = ""
+	if ip := GetClientIP(req); ip != "" {
+		t.Errorf("expected empty string, got %q", ip)
+	}
+}
+
+func TestGetClientIP_XRealIP(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "10.0.0.1:1234"
+	req.Header.Set("X-Real-IP", "203.0.113.50")
+	if ip := GetClientIP(req); ip != "203.0.113.50" {
+		t.Errorf("expected '203.0.113.50', got %q", ip)
+	}
+}
+
+func TestGetClientIP_XForwardedFor(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "10.0.0.1:1234"
+	req.Header.Set("X-Forwarded-For", "203.0.113.50, 10.0.0.1")
+	if ip := GetClientIP(req); ip != "203.0.113.50" {
+		t.Errorf("expected '203.0.113.50', got %q", ip)
+	}
+}
+
+func TestGetClientIP_XRealIP_TakesPrecedence(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "10.0.0.1:1234"
+	req.Header.Set("X-Real-IP", "1.2.3.4")
+	req.Header.Set("X-Forwarded-For", "5.6.7.8")
+	if ip := GetClientIP(req); ip != "1.2.3.4" {
+		t.Errorf("expected X-Real-IP '1.2.3.4', got %q", ip)
+	}
+}
+
+func TestGetClientIP_NoHeaders_FallsBack(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "192.168.1.1:5678"
+	if ip := GetClientIP(req); ip != "192.168.1.1" {
+		t.Errorf("expected '192.168.1.1', got %q", ip)
 	}
 }

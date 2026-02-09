@@ -16,11 +16,31 @@ type Config struct {
 	ServerHost      string
 }
 
+// AuthConfig holds authentication settings
+type AuthConfig struct {
+	Mode           string `json:"mode"`           // "unsecured", "secured", or "" (unset)
+	SessionTimeout string `json:"sessionTimeout"` // duration string, default "3m"
+}
+
 // Settings represents the parsed settings.json file
 type Settings struct {
-	BaseURL      string                       `json:"baseUrl"`
-	SyncInterval string                       `json:"syncInterval"`
-	Providers    map[string]map[string]any    `json:"providers"`
+	BaseURL      string                    `json:"baseUrl"`
+	SyncInterval string                    `json:"syncInterval"`
+	Auth         *AuthConfig               `json:"auth,omitempty"`
+	Providers    map[string]map[string]any `json:"providers"`
+}
+
+// SaveSettings writes settings back to settings.json in the config directory
+func SaveSettings(configDir string, settings *Settings) error {
+	data, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal settings: %w", err)
+	}
+	settingsPath := filepath.Join(configDir, "settings.json")
+	if err := os.WriteFile(settingsPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write settings.json: %w", err)
+	}
+	return nil
 }
 
 func Load() *Config {

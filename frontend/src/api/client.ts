@@ -8,6 +8,15 @@ function apiHeaders(extra?: Record<string, string>): Record<string, string> {
   return { "X-PWSAFE-Token": getApiToken(), ...extra };
 }
 
+async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
+  const response = await fetch(url, { ...init, credentials: "include" });
+  if (response.status === 401) {
+    window.location.href = "/web/login?expired=true";
+    throw new Error("Session expired");
+  }
+  return response;
+}
+
 export type SafeFile = {
   id: string;
   name: string;
@@ -88,7 +97,7 @@ export type ProviderSyncResponse = {
 
 export const api = {
   async listSafes(): Promise<SafeFile[]> {
-    const response = await fetch(`${API_BASE_URL}/safes`, {
+    const response = await apiFetch(`${API_BASE_URL}/safes`, {
       headers: apiHeaders(),
     });
     if (!response.ok) {
@@ -98,7 +107,7 @@ export const api = {
   },
 
   async unlockSafe(id: string, password: string): Promise<SafeStructure> {
-    const response = await fetch(`${API_BASE_URL}/safes/${id}/unlock`, {
+    const response = await apiFetch(`${API_BASE_URL}/safes/${id}/unlock`, {
       method: "POST",
       headers: apiHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ password }),
@@ -113,7 +122,7 @@ export const api = {
   },
 
   async getEntryPassword(id: string, password: string, entryUuid: string): Promise<string> {
-    const response = await fetch(`${API_BASE_URL}/safes/${id}/entry`, {
+    const response = await apiFetch(`${API_BASE_URL}/safes/${id}/entry`, {
       method: "POST",
       headers: apiHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ password, entryUuid }),
@@ -130,7 +139,7 @@ export const api = {
 
   // Provider APIs
   async listProviders(): Promise<ProvidersResponse> {
-    const response = await fetch(`${API_BASE_URL}/providers`, {
+    const response = await apiFetch(`${API_BASE_URL}/providers`, {
       headers: apiHeaders(),
     });
     if (!response.ok) {
@@ -140,7 +149,7 @@ export const api = {
   },
 
   async getProviderStatus(providerId: string): Promise<ProviderStatus> {
-    const response = await fetch(`${API_BASE_URL}/providers/${providerId}/status`, {
+    const response = await apiFetch(`${API_BASE_URL}/providers/${providerId}/status`, {
       headers: apiHeaders(),
     });
     if (!response.ok) {
@@ -150,7 +159,7 @@ export const api = {
   },
 
   async getProviderAuthUrl(providerId: string): Promise<ProviderAuthURL> {
-    const response = await fetch(`${API_BASE_URL}/providers/${providerId}/auth/url`, {
+    const response = await apiFetch(`${API_BASE_URL}/providers/${providerId}/auth/url`, {
       headers: apiHeaders(),
     });
     if (!response.ok) {
@@ -161,7 +170,7 @@ export const api = {
   },
 
   async disconnectProvider(providerId: string): Promise<{ success: boolean }> {
-    const response = await fetch(`${API_BASE_URL}/providers/${providerId}/disconnect`, {
+    const response = await apiFetch(`${API_BASE_URL}/providers/${providerId}/disconnect`, {
       method: "POST",
       headers: apiHeaders(),
     });
@@ -173,7 +182,7 @@ export const api = {
   },
 
   async getProviderFiles(providerId: string): Promise<ProviderFilesResponse> {
-    const response = await fetch(`${API_BASE_URL}/providers/${providerId}/files`, {
+    const response = await apiFetch(`${API_BASE_URL}/providers/${providerId}/files`, {
       headers: apiHeaders(),
     });
     if (!response.ok) {
@@ -184,7 +193,7 @@ export const api = {
   },
 
   async saveProviderFiles(providerId: string, files: ProviderFile[]): Promise<{ success: boolean }> {
-    const response = await fetch(`${API_BASE_URL}/providers/${providerId}/files`, {
+    const response = await apiFetch(`${API_BASE_URL}/providers/${providerId}/files`, {
       method: "PUT",
       headers: apiHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ files }),
@@ -197,7 +206,7 @@ export const api = {
   },
 
   async syncProvider(providerId: string): Promise<ProviderSyncResponse> {
-    const response = await fetch(`${API_BASE_URL}/providers/${providerId}/sync`, {
+    const response = await apiFetch(`${API_BASE_URL}/providers/${providerId}/sync`, {
       method: "POST",
       headers: apiHeaders(),
     });
@@ -215,7 +224,7 @@ export const api = {
 
     const url = overwrite ? `${API_BASE_URL}/providers/static/files?overwrite=true` : `${API_BASE_URL}/providers/static/files`;
 
-    const response = await fetch(url, {
+    const response = await apiFetch(url, {
       method: "POST",
       headers: apiHeaders(),
       body: formData,
@@ -236,7 +245,7 @@ export const api = {
   },
 
   async deleteStaticSafe(id: string): Promise<{ success: boolean }> {
-    const response = await fetch(`${API_BASE_URL}/providers/static/files/${id}`, {
+    const response = await apiFetch(`${API_BASE_URL}/providers/static/files/${id}`, {
       method: "DELETE",
       headers: apiHeaders(),
     });
@@ -245,5 +254,39 @@ export const api = {
       throw new Error(error.error || "Failed to delete safe");
     }
     return response.json();
+  },
+
+  // Auth APIs
+  async getAuthStatus(): Promise<{ mode: string; authenticated: boolean }> {
+    const response = await fetch(`${API_BASE_URL}/auth/status`, { credentials: "include" });
+    return response.json();
+  },
+
+  async authSetup(mode: string, password?: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/auth/setup`, {
+      method: "POST",
+      headers: apiHeaders({ "Content-Type": "application/json" }),
+      credentials: "include",
+      body: JSON.stringify({ mode, password }),
+    });
+    if (!response.ok) throw new Error((await response.text()).trim());
+  },
+
+  async login(password: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: "POST",
+      headers: apiHeaders({ "Content-Type": "application/json" }),
+      credentials: "include",
+      body: JSON.stringify({ password }),
+    });
+    if (!response.ok) throw new Error((await response.text()).trim());
+  },
+
+  async logout(): Promise<void> {
+    await fetch(`${API_BASE_URL}/auth/logout`, {
+      method: "POST",
+      headers: apiHeaders(),
+      credentials: "include",
+    });
   },
 };

@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rolledback/pwsafe-service/backend/internal/auth"
 	"github.com/rolledback/pwsafe-service/backend/internal/config"
 	"github.com/rolledback/pwsafe-service/backend/internal/handlers"
 	"github.com/rolledback/pwsafe-service/backend/internal/middleware"
@@ -91,6 +92,18 @@ func main() {
 	// Create static provider handler (for upload/delete of static safes)
 	staticProviderHandler := handlers.NewStaticProviderHandler(cfg.DataDirectory, safeService)
 
+	// Create auth service
+	authService := auth.NewAuthService(cfg.DataDirectory, cfg.ConfigDirectory, settings)
+	authHandler := handlers.NewAuthHandler(authService)
+
+	// Log TLS warning for secured mode
+	if authService.GetMode() == "secured" {
+		log.Printf("WARNING: Secured mode active — ensure HTTPS is configured to protect passwords in transit")
+	}
+
+	// Start session cleanup goroutine
+	go authService.CleanupExpiredSessions(ctx)
+
 	// General rate limiter
 	rateLimiter := middleware.NewRateLimiter(ctx, rate.Limit(5), 5)
 
@@ -115,8 +128,15 @@ func main() {
 	tokenScript := fmt.Sprintf(`<script nonce="%%NONCE%%">window.__PWSAFE_TOKEN="%s";</script>`, apiToken)
 	indexHTMLTemplate := strings.Replace(string(indexHTML), "</head>", tokenScript+"</head>", 1)
 
-	http.HandleFunc("/api/safes", middleware.CORS(middleware.RequireToken(apiToken, rateLimiter.Limit(safeHandler.ListSafes))))
-	http.HandleFunc("/api/safes/", middleware.CORS(middleware.RequireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
+	// Auth routes (no RequireAuth)
+	http.HandleFunc("/api/auth/status", middleware.CORS(authHandler.Status))
+	http.HandleFunc("/api/auth/setup", middleware.CORS(middleware.RequireToken(apiToken, strictRateLimiter.Limit(authHandler.Setup))))
+	http.HandleFunc("/api/auth/login", middleware.CORS(middleware.RequireToken(apiToken, strictRateLimiter.Limit(authHandler.Login))))
+	http.HandleFunc("/api/auth/logout", middleware.CORS(middleware.RequireToken(apiToken, middleware.RequireAuth(authService, authHandler.Logout))))
+
+	// Protected API routes (wrapped with RequireAuth)
+	http.HandleFunc("/api/safes", middleware.CORS(middleware.RequireToken(apiToken, middleware.RequireAuth(authService, rateLimiter.Limit(safeHandler.ListSafes)))))
+	http.HandleFunc("/api/safes/", middleware.CORS(middleware.RequireToken(apiToken, middleware.RequireAuth(authService, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path[len(r.URL.Path)-7:] == "/unlock" {
 			strictRateLimiter.Limit(safeHandler.UnlockSafe)(w, r)
 		} else if r.URL.Path[len(r.URL.Path)-6:] == "/entry" {
@@ -124,17 +144,17 @@ func main() {
 		} else {
 			http.NotFound(w, r)
 		}
-	})))
+	}))))
 
 	// Provider routes (new generic API)
-	http.HandleFunc("/api/providers", middleware.CORS(middleware.RequireToken(apiToken, rateLimiter.Limit(providersHandler.ListProviders))))
-	http.HandleFunc("/api/providers/static/", middleware.CORS(middleware.RequireToken(apiToken, rateLimiter.Limit(staticProviderHandler.Route))))
+	http.HandleFunc("/api/providers", middleware.CORS(middleware.RequireToken(apiToken, middleware.RequireAuth(authService, rateLimiter.Limit(providersHandler.ListProviders)))))
+	http.HandleFunc("/api/providers/static/", middleware.CORS(middleware.RequireToken(apiToken, middleware.RequireAuth(authService, rateLimiter.Limit(staticProviderHandler.Route)))))
 	http.HandleFunc("/api/providers/", middleware.CORS(middleware.RequireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
-		// Don't rate limit callbacks (they come from OAuth redirects)
+		// Don't rate limit or auth-check callbacks (they come from OAuth redirects)
 		if middleware.IsOAuthCallback(r.URL.Path) {
 			providersHandler.Route(w, r)
 		} else {
-			rateLimiter.Limit(providersHandler.Route)(w, r)
+			middleware.RequireAuth(authService, rateLimiter.Limit(providersHandler.Route))(w, r)
 		}
 	})))
 

@@ -1,27 +1,14 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { ServerInstance } from "../../helpers/server";
-import { ApiClient } from "../../helpers/api-client";
+import { it, expect } from "vitest";
+import { describeDualMode } from "../../helpers/dual-mode";
 import { loadTestSafe } from "../../helpers/fixtures";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-describe("Safe upload and delete management", () => {
-  let server: ServerInstance;
-  let api: ApiClient;
-
+describeDualMode("Safe upload and delete management", {}, (getApi) => {
   const uploadName = "uploaded-test.psafe3";
 
-  beforeAll(async () => {
-    server = new ServerInstance();
-    await server.start();
-    api = new ApiClient(server.baseUrl, server.apiToken);
-  });
-
-  afterAll(async () => {
-    await server.stop();
-  });
-
   it("uploads a safe file and it appears in the safe list", async () => {
+    const api = getApi();
     const content = await loadTestSafe("simple.psafe3");
     const resp = await api.uploadStaticSafe(uploadName, content);
 
@@ -36,6 +23,7 @@ describe("Safe upload and delete management", () => {
   });
 
   it("returns 409 when uploading a duplicate filename", async () => {
+    const api = getApi();
     const content = await loadTestSafe("simple.psafe3");
     const resp = await api.uploadStaticSafe(uploadName, content);
 
@@ -46,6 +34,7 @@ describe("Safe upload and delete management", () => {
   });
 
   it("succeeds when uploading duplicate with overwrite=true", async () => {
+    const api = getApi();
     const content = await loadTestSafe("simple.psafe3");
     const resp = await api.uploadStaticSafe(uploadName, content, true);
 
@@ -55,6 +44,7 @@ describe("Safe upload and delete management", () => {
   });
 
   it("deletes the uploaded safe and it disappears from safe list", async () => {
+    const api = getApi();
     // Allow general rate limiter to refill after previous requests
     await sleep(500);
 
@@ -75,6 +65,7 @@ describe("Safe upload and delete management", () => {
   });
 
   it("returns error when deleting a non-existent safe", async () => {
+    const api = getApi();
     await sleep(500);
     const resp = await api.deleteStaticSafe("0000000000000000");
 

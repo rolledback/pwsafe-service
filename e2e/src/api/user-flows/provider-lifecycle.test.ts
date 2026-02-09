@@ -1,94 +1,93 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { ServerInstance } from "../../helpers/server";
-import { ApiClient } from "../../helpers/api-client";
+import { it, expect, describe } from "vitest";
+import { describeDualMode } from "../../helpers/dual-mode";
 
-describe("Mock provider lifecycle", { timeout: 60_000 }, () => {
-  let server: ServerInstance;
-  let api: ApiClient;
+describeDualMode("Mock provider lifecycle", {}, (getApi, getServer) => {
+  describe("lifecycle", { timeout: 60_000 }, () => {
+    it("starts disconnected", async () => {
+      const api = getApi();
+      const status = await api.getProviderStatus("mock");
+      expect(status.connected).toBe(false);
+    });
 
-  beforeAll(async () => {
-    server = new ServerInstance();
-    await server.start();
-    api = new ApiClient(server.baseUrl, server.apiToken);
-  });
+    it("returns an auth URL", async () => {
+      const api = getApi();
+      const { url } = await api.getProviderAuthUrl("mock");
+      expect(url).toBeTruthy();
+      expect(url).toContain("code=mock-auth-code");
+    });
 
-  afterAll(async () => {
-    await server.stop();
-  });
+    it("auth callback returns a redirect", async () => {
+      const api = getApi();
+      const server = getServer();
+      const { url } = await api.getProviderAuthUrl("mock");
 
-  it("starts disconnected", async () => {
-    const status = await api.getProviderStatus("mock");
-    expect(status.connected).toBe(false);
-  });
+      // The mock auth URL already points to the callback endpoint
+      const resp = await api.raw("GET", url.replace(server.baseUrl, ""));
 
-  it("returns an auth URL", async () => {
-    const { url } = await api.getProviderAuthUrl("mock");
-    expect(url).toBeTruthy();
-    expect(url).toContain("code=mock-auth-code");
-  });
+      expect(resp.status).toBe(302);
+    });
 
-  it("auth callback returns a redirect", async () => {
-    const { url } = await api.getProviderAuthUrl("mock");
+    it("is connected after auth callback", async () => {
+      const api = getApi();
+      const status = await api.getProviderStatus("mock");
+      expect(status.connected).toBe(true);
+    });
 
-    // The mock auth URL already points to the callback endpoint
-    const resp = await api.raw("GET", url.replace(server.baseUrl, ""));
+    it("lists remote files from testdata", async () => {
+      const api = getApi();
+      const { files } = await api.getProviderFiles("mock");
 
-    expect(resp.status).toBe(302);
-  });
+      expect(files).toBeInstanceOf(Array);
+      expect(files.length).toBeGreaterThanOrEqual(2);
 
-  it("is connected after auth callback", async () => {
-    const status = await api.getProviderStatus("mock");
-    expect(status.connected).toBe(true);
-  });
+      const names = files.map((f) => f.name);
+      expect(names).toContain("simple.psafe3");
+      expect(names).toContain("three.psafe3");
+    });
 
-  it("lists remote files from testdata", async () => {
-    const { files } = await api.getProviderFiles("mock");
+    it("saves selected files", async () => {
+      const api = getApi();
+      const { files } = await api.getProviderFiles("mock");
 
-    expect(files).toBeInstanceOf(Array);
-    expect(files.length).toBeGreaterThanOrEqual(2);
+      const selected = files.map((f) => ({ ...f, selected: true }));
+      const result = await api.saveProviderFiles("mock", selected);
+      expect(result.success).toBe(true);
+    });
 
-    const names = files.map((f) => f.name);
-    expect(names).toContain("simple.psafe3");
-    expect(names).toContain("three.psafe3");
-  });
+    it("syncs files successfully", async () => {
+      const api = getApi();
+      const { results } = await api.syncProvider("mock");
 
-  it("saves selected files", async () => {
-    const { files } = await api.getProviderFiles("mock");
+      expect(results).toBeInstanceOf(Array);
+      expect(results.length).toBeGreaterThan(0);
+      for (const r of results) {
+        expect(r.success).toBe(true);
+        expect(r.name).toBeTruthy();
+      }
+    });
 
-    const selected = files.map((f) => ({ ...f, selected: true }));
-    const result = await api.saveProviderFiles("mock", selected);
-    expect(result.success).toBe(true);
-  });
+    it("synced files appear in /api/safes", async () => {
+      const api = getApi();
+      const safes = await api.listSafes();
+      const mockSafes = safes.filter((s) => s.provider === "mock");
 
-  it("syncs files successfully", async () => {
-    const { results } = await api.syncProvider("mock");
+      expect(mockSafes.length).toBeGreaterThan(0);
 
-    expect(results).toBeInstanceOf(Array);
-    expect(results.length).toBeGreaterThan(0);
-    for (const r of results) {
-      expect(r.success).toBe(true);
-      expect(r.name).toBeTruthy();
-    }
-  });
+      const names = mockSafes.map((s) => s.name);
+      expect(names).toContain("simple.psafe3");
+      expect(names).toContain("three.psafe3");
+    });
 
-  it("synced files appear in /api/safes", async () => {
-    const safes = await api.listSafes();
-    const mockSafes = safes.filter((s) => s.provider === "mock");
+    it("disconnects successfully", async () => {
+      const api = getApi();
+      const result = await api.disconnectProvider("mock");
+      expect(result.success).toBe(true);
+    });
 
-    expect(mockSafes.length).toBeGreaterThan(0);
-
-    const names = mockSafes.map((s) => s.name);
-    expect(names).toContain("simple.psafe3");
-    expect(names).toContain("three.psafe3");
-  });
-
-  it("disconnects successfully", async () => {
-    const result = await api.disconnectProvider("mock");
-    expect(result.success).toBe(true);
-  });
-
-  it("is disconnected after disconnect", async () => {
-    const status = await api.getProviderStatus("mock");
-    expect(status.connected).toBe(false);
+    it("is disconnected after disconnect", async () => {
+      const api = getApi();
+      const status = await api.getProviderStatus("mock");
+      expect(status.connected).toBe(false);
+    });
   });
 });

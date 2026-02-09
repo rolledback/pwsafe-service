@@ -1,21 +1,7 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { ServerInstance } from "../../helpers/server";
-import { ApiClient } from "../../helpers/api-client";
+import { describe, it, expect } from "vitest";
+import { describeDualMode } from "../../helpers/dual-mode";
 
-describe("Token Authentication Enforcement", () => {
-  let server: ServerInstance;
-  let api: ApiClient;
-
-  beforeAll(async () => {
-    server = new ServerInstance();
-    await server.start();
-    api = new ApiClient(server.baseUrl, server.apiToken);
-  });
-
-  afterAll(async () => {
-    await server.stop();
-  });
-
+describeDualMode("Token Authentication Enforcement", {}, (getApi) => {
   const getEndpoints = ["/api/safes", "/api/providers", "/api/providers/mock/status", "/api/providers/mock/files"];
 
   const mutatingEndpoints: Array<{ method: string; path: string }> = [
@@ -27,6 +13,7 @@ describe("Token Authentication Enforcement", () => {
   describe("requests without token return 403", () => {
     for (const path of getEndpoints) {
       it(`GET ${path} → 403`, async () => {
+        const api = getApi();
         const resp = await api.raw("GET", path, { token: null });
         expect(resp.status).toBe(403);
       });
@@ -34,6 +21,7 @@ describe("Token Authentication Enforcement", () => {
 
     for (const { method, path } of mutatingEndpoints) {
       it(`${method} ${path} → 403`, async () => {
+        const api = getApi();
         const resp = await api.raw(method, path, { token: null });
         expect(resp.status).toBe(403);
       });
@@ -43,6 +31,7 @@ describe("Token Authentication Enforcement", () => {
   describe("requests with wrong token return 403", () => {
     for (const path of getEndpoints) {
       it(`GET ${path} → 403`, async () => {
+        const api = getApi();
         const resp = await api.raw("GET", path, { token: "badtoken" });
         expect(resp.status).toBe(403);
       });
@@ -50,6 +39,7 @@ describe("Token Authentication Enforcement", () => {
 
     for (const { method, path } of mutatingEndpoints) {
       it(`${method} ${path} → 403`, async () => {
+        const api = getApi();
         const resp = await api.raw(method, path, { token: "badtoken" });
         expect(resp.status).toBe(403);
       });
@@ -59,17 +49,22 @@ describe("Token Authentication Enforcement", () => {
   describe("requests with correct token do not return 403", () => {
     for (const path of getEndpoints) {
       it(`GET ${path} → not 403`, async () => {
+        const api = getApi();
         const resp = await api.raw("GET", path);
-        expect(resp.status).not.toBe(403);
+        expect(resp.status).toBeGreaterThanOrEqual(200);
+        expect(resp.status).toBeLessThan(400);
       });
     }
 
     for (const { method, path } of mutatingEndpoints) {
       it(`${method} ${path} → not 403`, async () => {
+        const api = getApi();
         const resp = await api.raw(method, path, {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({}),
         });
+        // These hit nonexistent/disconnected resources so may return 4xx/5xx,
+        // but should NOT return 403 (which would mean token was rejected)
         expect(resp.status).not.toBe(403);
       });
     }

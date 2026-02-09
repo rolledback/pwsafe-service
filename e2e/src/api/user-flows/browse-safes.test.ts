@@ -1,22 +1,9 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { ServerInstance } from "../../helpers/server";
-import { ApiClient } from "../../helpers/api-client";
+import { it, expect } from "vitest";
+import { describeDualMode } from "../../helpers/dual-mode";
 
-describe("Browse safes and providers", () => {
-  let server: ServerInstance;
-  let api: ApiClient;
-
-  beforeAll(async () => {
-    server = new ServerInstance();
-    await server.start();
-    api = new ApiClient(server.baseUrl, server.apiToken);
-  });
-
-  afterAll(async () => {
-    await server.stop();
-  });
-
+describeDualMode("Browse safes and providers", {}, (getApi) => {
   it("lists all safes from the static provider", async () => {
+    const api = getApi();
     const safes = await api.listSafes();
 
     expect(safes).toBeInstanceOf(Array);
@@ -28,6 +15,7 @@ describe("Browse safes and providers", () => {
   });
 
   it("each safe has the expected fields", async () => {
+    const api = getApi();
     const safes = await api.listSafes();
 
     for (const safe of safes) {
@@ -40,6 +28,7 @@ describe("Browse safes and providers", () => {
   });
 
   it("all safes belong to the static provider", async () => {
+    const api = getApi();
     const safes = await api.listSafes();
     for (const safe of safes) {
       expect(safe.provider).toBe("static");
@@ -47,6 +36,7 @@ describe("Browse safes and providers", () => {
   });
 
   it("lists available providers including mock", async () => {
+    const api = getApi();
     const { providers } = await api.listProviders();
 
     expect(providers).toBeInstanceOf(Array);

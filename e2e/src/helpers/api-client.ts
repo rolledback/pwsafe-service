@@ -9,10 +9,30 @@ import type {
 } from "../../../frontend/src/api/client";
 
 export class ApiClient {
+  private cookies: Record<string, string> = {};
+
   constructor(
     private baseUrl: string,
     private token: string,
   ) {}
+
+  async login(password: string): Promise<void> {
+    const resp = await this.raw("POST", "/api/auth/login", {
+      body: JSON.stringify({ password }),
+      headers: { "Content-Type": "application/json" },
+    });
+    if (resp.status !== 200) throw new Error(`Login failed: ${resp.status}`);
+    const setCookie = resp.headers.get("set-cookie");
+    if (setCookie) {
+      const match = setCookie.match(/pwsafe_session=([^;]+)/);
+      if (match) this.cookies["pwsafe_session"] = match[1];
+    }
+  }
+
+  async logout(): Promise<void> {
+    await this.raw("POST", "/api/auth/logout");
+    delete this.cookies["pwsafe_session"];
+  }
 
   // Raw request — returns full Response for status/header inspection
   async raw(
@@ -28,6 +48,13 @@ export class ApiClient {
 
     if (options.token !== null) {
       headers["X-PWSAFE-Token"] = options.token ?? this.token;
+    }
+
+    if (Object.keys(this.cookies).length > 0) {
+      const cookieStr = Object.entries(this.cookies)
+        .map(([k, v]) => `${k}=${v}`)
+        .join("; ");
+      headers["Cookie"] = cookieStr;
     }
 
     return fetch(`${this.baseUrl}${path}`, {
@@ -112,5 +139,20 @@ export class ApiClient {
 
   async deleteStaticSafe(id: string): Promise<Response> {
     return this.raw("DELETE", `/api/providers/static/files/${id}`);
+  }
+
+  async getAuthStatus(): Promise<{ mode: string; authenticated: boolean }> {
+    const resp = await this.raw("GET", "/api/auth/status");
+    return resp.json();
+  }
+
+  async authSetup(mode: string, password?: string): Promise<{ status: string }> {
+    const body: Record<string, string> = { mode };
+    if (password) body.password = password;
+    const resp = await this.raw("POST", "/api/auth/setup", {
+      body: JSON.stringify(body),
+      headers: { "Content-Type": "application/json" },
+    });
+    return resp.json();
   }
 }
