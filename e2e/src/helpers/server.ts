@@ -35,6 +35,7 @@ export class ServerInstance {
   public baseUrl: string = "";
   public csrfToken: string = "";
   public port: number = 0;
+  public configDir: string = "";
 
   constructor(options: ServerOptions = {}) {
     this.options = options;
@@ -44,6 +45,7 @@ export class ServerInstance {
     this.tempDir = await mkdtemp(join(tmpdir(), "pwsafe-e2e-"));
 
     const configDir = join(this.tempDir, "config");
+    this.configDir = configDir;
     const dataDir = join(this.tempDir, "data");
     const staticDir = join(this.tempDir, "static");
     const staticDataDir = join(dataDir, "static");

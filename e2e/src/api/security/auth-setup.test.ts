@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { ServerInstance } from "../../helpers/server";
 import { ApiClient } from "../../helpers/api-client";
 
@@ -90,6 +92,18 @@ describe("Auth setup flow", () => {
         headers: { "Content-Type": "application/json" },
       });
       expect(resp.status).toBe(403);
+    });
+
+    it("settings.json omits default auth fields after setup", async () => {
+      const raw = await readFile(join(server.configDir, "settings.json"), "utf-8");
+      const settings = JSON.parse(raw);
+      expect(settings.auth).toBeDefined();
+      expect(settings.auth.mode).toBe("enabled");
+      // Zero-value fields should be omitted, not written as "" or 0
+      expect(settings.auth).not.toHaveProperty("sessionTimeout");
+      expect(settings.auth).not.toHaveProperty("bcryptCost");
+      expect(settings.auth).not.toHaveProperty("maxSessions");
+      expect(settings.auth).not.toHaveProperty("maxSessionLifetime");
     });
   });
 
