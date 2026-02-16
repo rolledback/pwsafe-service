@@ -70,17 +70,6 @@ func TestStatus_GET_ReturnsMode(t *testing.T) {
 	}
 }
 
-func TestStatus_WrongMethod(t *testing.T) {
-	h := newTestAuthHandler(t)
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/status", nil)
-	req.RemoteAddr = "127.0.0.1:12345"
-	w := httptest.NewRecorder()
-	h.Status(w, req)
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Errorf("expected 405, got %d", w.Code)
-	}
-}
-
 func TestSetup_POST_Disabled(t *testing.T) {
 	h := newTestAuthHandler(t)
 	body, _ := json.Marshal(map[string]string{"mode": "disabled"})
@@ -90,17 +79,6 @@ func TestSetup_POST_Disabled(t *testing.T) {
 	h.Setup(w, req)
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestSetup_WrongMethod(t *testing.T) {
-	h := newTestAuthHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/auth/setup", nil)
-	req.RemoteAddr = "127.0.0.1:12345"
-	w := httptest.NewRecorder()
-	h.Setup(w, req)
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Errorf("expected 405, got %d", w.Code)
 	}
 }
 
@@ -179,17 +157,6 @@ func TestLogin_Failure_NoCookie(t *testing.T) {
 	setCookie := w.Header().Get("Set-Cookie")
 	if strings.Contains(setCookie, "pwsafe_session_id") {
 		t.Error("should not set pwsafe_session_id cookie on failed login")
-	}
-}
-
-func TestLogin_WrongMethod(t *testing.T) {
-	h := newEnabledAuthHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/auth/login", nil)
-	req.RemoteAddr = "127.0.0.1:12345"
-	w := httptest.NewRecorder()
-	h.Login(w, req)
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Errorf("expected 405, got %d", w.Code)
 	}
 }
 

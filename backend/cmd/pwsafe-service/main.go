@@ -123,35 +123,39 @@ func main() {
 	csrfScript := fmt.Sprintf(`<script nonce="%%CSP_NONCE%%">window.__PWSAFE_CSRF_TOKEN="%s";</script>`, csrfToken)
 	indexHTMLTemplate := strings.Replace(string(indexHTML), "</head>", csrfScript+"</head>", 1)
 
-	// Auth routes (no RequireAuth)
-	http.HandleFunc("/api/auth/status", middleware.CORS(authHandler.Status))
-	http.HandleFunc("/api/auth/setup", middleware.CORS(middleware.RequireCsrfToken(csrfToken, limiters.Strict.Limit(authHandler.Setup))))
-	http.HandleFunc("/api/auth/login", middleware.CORS(middleware.RequireCsrfToken(csrfToken, limiters.Strict.Limit(authHandler.Login))))
-	http.HandleFunc("/api/auth/logout", middleware.CORS(middleware.RequireCsrfToken(csrfToken, middleware.RequireAuth(authService, authHandler.Logout))))
+	// API routes — declarative middleware via Route structs
+	mux := http.NewServeMux()
+	middleware.RegisterRoutes(mux, []middleware.Route{
+		// Auth routes (no RequireAuth)
+		{Pattern: "/api/auth/status", Handler: authHandler.Status, Method: http.MethodGet},
+		{Pattern: "/api/auth/setup", Handler: authHandler.Setup, Csrf: true, Limiter: limiters.Strict, Method: http.MethodPost},
+		{Pattern: "/api/auth/login", Handler: authHandler.Login, Csrf: true, Limiter: limiters.Strict, Method: http.MethodPost},
+		{Pattern: "/api/auth/logout", Handler: authHandler.Logout, Csrf: true, Auth: true, Method: http.MethodPost},
 
-	// Protected API routes (wrapped with RequireAuth)
-	http.HandleFunc("/api/safes", middleware.CORS(middleware.RequireCsrfToken(csrfToken, middleware.RequireAuth(authService, limiters.Standard.Limit(safeHandler.ListSafes)))))
-	http.HandleFunc("/api/safes/", middleware.CORS(middleware.RequireCsrfToken(csrfToken, middleware.RequireAuth(authService, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path[len(r.URL.Path)-7:] == "/unlock" {
-			limiters.Strict.Limit(safeHandler.UnlockSafe)(w, r)
-		} else if r.URL.Path[len(r.URL.Path)-6:] == "/entry" {
-			limiters.Strict.Limit(safeHandler.GetEntryPassword)(w, r)
-		} else {
-			http.NotFound(w, r)
-		}
-	}))))
+		// Protected safe routes
+		{Pattern: "/api/safes", Handler: safeHandler.ListSafes, Csrf: true, Auth: true, Limiter: limiters.Standard, Method: http.MethodGet},
+		{Pattern: "/api/safes/", Handler: func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path[len(r.URL.Path)-7:] == "/unlock" {
+				safeHandler.UnlockSafe(w, r)
+			} else if r.URL.Path[len(r.URL.Path)-6:] == "/entry" {
+				safeHandler.GetEntryPassword(w, r)
+			} else {
+				http.NotFound(w, r)
+			}
+		}, Csrf: true, Auth: true, Limiter: limiters.Strict, Method: http.MethodPost},
 
-	// Provider routes (new generic API)
-	http.HandleFunc("/api/providers", middleware.CORS(middleware.RequireCsrfToken(csrfToken, middleware.RequireAuth(authService, limiters.Standard.Limit(providersHandler.ListProviders)))))
-	http.HandleFunc("/api/providers/static/", middleware.CORS(middleware.RequireCsrfToken(csrfToken, middleware.RequireAuth(authService, limiters.Standard.Limit(staticProviderHandler.Route)))))
-	http.HandleFunc("/api/providers/", middleware.CORS(middleware.RequireCsrfToken(csrfToken, func(w http.ResponseWriter, r *http.Request) {
-		// Don't rate limit or auth-check callbacks (they come from OAuth redirects)
-		if middleware.IsOAuthCallback(r.URL.Path) {
-			providersHandler.Route(w, r)
-		} else {
-			middleware.RequireAuth(authService, limiters.Standard.Limit(providersHandler.Route))(w, r)
-		}
-	})))
+		// Provider routes
+		{Pattern: "/api/providers", Handler: providersHandler.ListProviders, Csrf: true, Auth: true, Limiter: limiters.Standard, Method: http.MethodGet},
+		{Pattern: "/api/providers/static/", Handler: staticProviderHandler.Route, Csrf: true, Auth: true, Limiter: limiters.Standard},
+		{Pattern: "/api/providers/", Handler: func(w http.ResponseWriter, r *http.Request) {
+			// OAuth callbacks skip auth and rate limiting
+			if middleware.IsOAuthCallback(r.URL.Path) {
+				providersHandler.Route(w, r)
+			} else {
+				middleware.RequireAuth(authService, limiters.Standard.Limit(providersHandler.Route))(w, r)
+			}
+		}, Csrf: true},
+	}, csrfToken, authService)
 
 	// Resolve absolute static dir once for containment checks
 	absStaticDir, err := filepath.Abs(cfg.StaticDir)
@@ -159,7 +163,7 @@ func main() {
 		log.Fatalf("Failed to resolve static dir: %v", err)
 	}
 
-	http.HandleFunc("/web/", limiters.Web.Limit(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/web/", limiters.Web.Limit(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path[4:] // Remove "/web" prefix
 
 		// For index.html or root, serve injected version with CSP nonce
@@ -189,7 +193,7 @@ func main() {
 	}))
 
 	// Redirect all non-/api routes to /web
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if len(r.URL.Path) >= 4 && r.URL.Path[:4] == "/api" {
 			http.NotFound(w, r)
 			return
@@ -203,7 +207,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:    fmt.Sprintf("%s:%s", cfg.ServerHost, cfg.ServerPort),
-		Handler: middleware.Logging(middleware.SecurityHeaders(http.DefaultServeMux)),
+		Handler: middleware.Logging(middleware.SecurityHeaders(mux)),
 	}
 
 	// Graceful shutdown on SIGTERM/SIGINT (needed for coverage data flush)

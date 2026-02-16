@@ -21,11 +21,6 @@ func NewSafeHandler(safeService *service.SafeService) *SafeHandler {
 }
 
 func (h *SafeHandler) ListSafes(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		h.respondError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	safes, err := h.safeService.ListSafes()
 	if err != nil {
 		log.Printf("Error listing safes: %v", err)
@@ -37,11 +32,6 @@ func (h *SafeHandler) ListSafes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SafeHandler) UnlockSafe(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		h.respondError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	// Extract ID from URL: /api/safes/{id}/unlock
 	id := extractSafeID(r.URL.Path, "/api/safes/", "/unlock")
 	if id == "" {
@@ -85,11 +75,6 @@ func (h *SafeHandler) UnlockSafe(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SafeHandler) GetEntryPassword(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		h.respondError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	// Extract ID from URL: /api/safes/{id}/entry
 	id := extractSafeID(r.URL.Path, "/api/safes/", "/entry")
 	if id == "" {

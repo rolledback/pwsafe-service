@@ -65,21 +65,6 @@ func TestListSafes_Handler(t *testing.T) {
 	}
 }
 
-func TestListSafes_WrongMethod(t *testing.T) {
-	tmpDir := testutil.SetupTestDataDir(t)
-	service := service.NewSafeService(tmpDir)
-	handler := NewSafeHandler(service)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/safes", nil)
-	w := httptest.NewRecorder()
-
-	handler.ListSafes(w, req)
-
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Errorf("Expected status 405, got %d", w.Code)
-	}
-}
-
 func TestUnlockSafe_Success(t *testing.T) {
 	tmpDir := testutil.SetupTestDataDir(t)
 	service := service.NewSafeService(tmpDir)

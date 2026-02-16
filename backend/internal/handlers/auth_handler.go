@@ -34,11 +34,6 @@ type loginRequest struct {
 
 // Status returns the current auth mode and whether the caller is authenticated
 func (h *AuthHandler) Status(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	ip := middleware.GetClientIP(r)
 	mode := h.authService.GetMode()
 	authenticated := false
@@ -61,11 +56,6 @@ func (h *AuthHandler) Status(w http.ResponseWriter, r *http.Request) {
 
 // Setup handles first-time auth configuration
 func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	var req setupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -87,11 +77,6 @@ func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 
 // Login handles password authentication and session creation
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	ip := middleware.GetClientIP(r)
 
 	var req loginRequest
@@ -116,11 +101,6 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 // Logout clears the session
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	sessionID := auth.GetSessionIDFromRequest(r)
 	if sessionID != "" {
 		h.authService.Logout(sessionID)

@@ -34,11 +34,6 @@ func NewProvidersHandler(services map[string]*service.SyncableSafesService, safe
 
 // ListProviders handles GET /api/providers - lists all available providers
 func (h *ProvidersHandler) ListProviders(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		h.respondError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	providers := make([]ProviderInfo, 0, len(h.services))
 	for _, svc := range h.services {
 		p := svc.Provider()
