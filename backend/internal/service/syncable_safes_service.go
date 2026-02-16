@@ -300,17 +300,8 @@ func (s *SyncableSafesService) getLocalPath(file SelectedFile) (string, error) {
 	relativePath = strings.TrimPrefix(relativePath, string(filepath.Separator))
 	joined := filepath.Clean(filepath.Join(s.providerDir(), relativePath, file.Name))
 
-	absPath, err := filepath.Abs(joined)
+	absPath, err := validatePathWithinBase(joined, s.providerDir())
 	if err != nil {
-		return "", fmt.Errorf("invalid file path: %w", err)
-	}
-
-	absBase, err := filepath.Abs(s.providerDir())
-	if err != nil {
-		return "", fmt.Errorf("invalid provider directory: %w", err)
-	}
-
-	if !strings.HasPrefix(absPath, absBase+string(filepath.Separator)) {
 		return "", fmt.Errorf("path traversal not allowed: %s", file.Path)
 	}
 
@@ -365,7 +356,7 @@ func (s *SyncableSafesService) cleanupUnselectedFiles(selectedFiles []SelectedFi
 		if err != nil || d.IsDir() || strings.HasPrefix(d.Name(), ".") {
 			return nil
 		}
-		if strings.HasSuffix(strings.ToLower(d.Name()), ".psafe3") {
+		if isSafeFile(d.Name()) {
 			if !selectedPaths[path] {
 				if os.Remove(path) == nil {
 					s.cleanupEmptyParentDirs(filepath.Dir(path), providerDir)
@@ -386,7 +377,7 @@ func (s *SyncableSafesService) cleanupAllSafeFiles() {
 		if err != nil || d.IsDir() {
 			return nil
 		}
-		if strings.HasSuffix(strings.ToLower(d.Name()), ".psafe3") {
+		if isSafeFile(d.Name()) {
 			if os.Remove(path) == nil {
 				s.cleanupEmptyParentDirs(filepath.Dir(path), providerDir)
 			}

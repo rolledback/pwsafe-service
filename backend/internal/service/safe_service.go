@@ -135,7 +135,7 @@ func (s *SafeService) scanDirectory(dir, source string, recursive bool) ([]model
 				return nil
 			}
 
-			if !strings.HasSuffix(strings.ToLower(d.Name()), ".psafe3") {
+			if !isSafeFile(d.Name()) {
 				return nil
 			}
 
@@ -176,7 +176,7 @@ func (s *SafeService) scanDirectory(dir, source string, recursive bool) ([]model
 				continue
 			}
 
-			if !strings.HasSuffix(strings.ToLower(entry.Name()), ".psafe3") {
+			if !isSafeFile(entry.Name()) {
 				continue
 			}
 
@@ -225,20 +225,9 @@ func (s *SafeService) ValidateSafePath(safePath string) (string, error) {
 	// Build absolute path
 	absPath := filepath.Join(s.dataDir, filepath.FromSlash(relativePath))
 
-	// Security: ensure the resolved path is still within dataDir
-	absPath, err := filepath.Abs(absPath)
+	absPath, err := validatePathWithinBase(absPath, s.dataDir)
 	if err != nil {
 		return "", fmt.Errorf("invalid safe path: %w", err)
-	}
-
-	absDataDir, err := filepath.Abs(s.dataDir)
-	if err != nil {
-		return "", fmt.Errorf("invalid data directory: %w", err)
-	}
-
-	// Check that the path is within allowed directories
-	if !strings.HasPrefix(absPath, absDataDir+string(filepath.Separator)) && absPath != absDataDir {
-		return "", fmt.Errorf("invalid safe path: directory traversal not allowed")
 	}
 
 	// Check file exists
@@ -249,7 +238,8 @@ func (s *SafeService) ValidateSafePath(safePath string) (string, error) {
 	return absPath, nil
 }
 
-func (s *SafeService) UnlockSafe(safePath, password string) (*models.SafeStructure, error) {
+// openSafe validates the safe path and opens the safe file with the given password
+func (s *SafeService) openSafe(safePath, password string) (*pwsafe.V3, error) {
 	absPath, err := s.ValidateSafePath(safePath)
 	if err != nil {
 		return nil, err
@@ -260,30 +250,27 @@ func (s *SafeService) UnlockSafe(safePath, password string) (*models.SafeStructu
 		return nil, fmt.Errorf("failed to unlock safe: %w", err)
 	}
 
+	return db, nil
+}
+
+func (s *SafeService) UnlockSafe(safePath, password string) (*models.SafeStructure, error) {
+	db, err := s.openSafe(safePath, password)
+	if err != nil {
+		return nil, err
+	}
+
 	structure := s.buildGroupTree(db)
 	return structure, nil
 }
 
 func (s *SafeService) GetEntryPassword(safePath, password, entryUUID string) (string, error) {
-	absPath, err := s.ValidateSafePath(safePath)
+	db, err := s.openSafe(safePath, password)
 	if err != nil {
 		return "", err
 	}
 
-	db, err := pwsafe.OpenPWSafeFile(absPath, password)
-	if err != nil {
-		return "", fmt.Errorf("failed to unlock safe: %w", err)
-	}
-
 	for _, record := range db.Records {
-		uuid := fmt.Sprintf("%x-%x-%x-%x-%x",
-			record.UUID[0:4],
-			record.UUID[4:6],
-			record.UUID[6:8],
-			record.UUID[8:10],
-			record.UUID[10:16])
-
-		if uuid == entryUUID {
+		if formatUUID(record.UUID[:]) == entryUUID {
 			return record.Password, nil
 		}
 	}
@@ -299,12 +286,7 @@ func (s *SafeService) buildGroupTree(db *pwsafe.V3) *models.SafeStructure {
 	for _, record := range db.Records {
 		groupPath := record.Group
 		title := record.Title
-		uuid := fmt.Sprintf("%x-%x-%x-%x-%x",
-			record.UUID[0:4],
-			record.UUID[4:6],
-			record.UUID[6:8],
-			record.UUID[8:10],
-			record.UUID[10:16])
+		uuid := formatUUID(record.UUID[:])
 		username := record.Username
 		url := record.URL
 		notes := record.Notes

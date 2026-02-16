@@ -32,18 +32,8 @@ func (h *SafeHandler) ListSafes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SafeHandler) UnlockSafe(w http.ResponseWriter, r *http.Request) {
-	// Extract ID from URL: /api/safes/{id}/unlock
-	id := extractSafeID(r.URL.Path, "/api/safes/", "/unlock")
-	if id == "" {
-		h.respondError(w, "Invalid safe identifier", http.StatusBadRequest)
-		return
-	}
-
-	// Resolve ID to path
-	ref, err := h.safeService.ResolvePath(id)
-	if err != nil {
-		log.Printf("Error resolving safe ID %s: %v", id, err)
-		h.respondError(w, "Safe not found", http.StatusNotFound)
+	ref, ok := h.resolveSafeFromURL(w, r, "/unlock")
+	if !ok {
 		return
 	}
 
@@ -60,14 +50,7 @@ func (h *SafeHandler) UnlockSafe(w http.ResponseWriter, r *http.Request) {
 
 	structure, err := h.safeService.UnlockSafe(ref.Path, req.Password)
 	if err != nil {
-		log.Printf("Error unlocking safe %s: %v", ref.Path, err)
-		if strings.Contains(err.Error(), "not found") {
-			h.respondError(w, "Safe file not found", http.StatusNotFound)
-		} else if strings.Contains(err.Error(), "directory traversal") || strings.Contains(err.Error(), "invalid safe path") {
-			h.respondError(w, "Invalid safe path", http.StatusBadRequest)
-		} else {
-			h.respondError(w, "Failed to unlock safe - invalid password or corrupted file", http.StatusUnauthorized)
-		}
+		h.handleSafeError(w, err, "Error unlocking safe "+ref.Path)
 		return
 	}
 
@@ -75,18 +58,8 @@ func (h *SafeHandler) UnlockSafe(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SafeHandler) GetEntryPassword(w http.ResponseWriter, r *http.Request) {
-	// Extract ID from URL: /api/safes/{id}/entry
-	id := extractSafeID(r.URL.Path, "/api/safes/", "/entry")
-	if id == "" {
-		h.respondError(w, "Invalid safe identifier", http.StatusBadRequest)
-		return
-	}
-
-	// Resolve ID to path
-	ref, err := h.safeService.ResolvePath(id)
-	if err != nil {
-		log.Printf("Error resolving safe ID %s: %v", id, err)
-		h.respondError(w, "Safe not found", http.StatusNotFound)
+	ref, ok := h.resolveSafeFromURL(w, r, "/entry")
+	if !ok {
 		return
 	}
 
@@ -103,14 +76,7 @@ func (h *SafeHandler) GetEntryPassword(w http.ResponseWriter, r *http.Request) {
 
 	password, err := h.safeService.GetEntryPassword(ref.Path, req.Password, req.EntryUUID)
 	if err != nil {
-		log.Printf("Error getting entry password for %s in %s: %v", req.EntryUUID, ref.Path, err)
-		if strings.Contains(err.Error(), "not found") {
-			h.respondError(w, err.Error(), http.StatusNotFound)
-		} else if strings.Contains(err.Error(), "directory traversal") || strings.Contains(err.Error(), "invalid safe path") {
-			h.respondError(w, "Invalid safe path", http.StatusBadRequest)
-		} else {
-			h.respondError(w, "Failed to get entry password", http.StatusUnauthorized)
-		}
+		h.handleSafeError(w, err, "Error getting entry password for "+req.EntryUUID+" in "+ref.Path)
 		return
 	}
 
@@ -128,6 +94,37 @@ func (h *SafeHandler) respondJSON(w http.ResponseWriter, data interface{}, statu
 
 func (h *SafeHandler) respondError(w http.ResponseWriter, message string, status int) {
 	h.respondJSON(w, models.ErrorResponse{Error: message}, status)
+}
+
+// resolveSafeFromURL extracts the safe ID from URL and resolves it to a SafeRef.
+// Returns nil and false if an error occurred (error response already written).
+func (h *SafeHandler) resolveSafeFromURL(w http.ResponseWriter, r *http.Request, suffix string) (service.SafeRef, bool) {
+	id := extractSafeID(r.URL.Path, "/api/safes/", suffix)
+	if id == "" {
+		h.respondError(w, "Invalid safe identifier", http.StatusBadRequest)
+		return service.SafeRef{}, false
+	}
+
+	ref, err := h.safeService.ResolvePath(id)
+	if err != nil {
+		log.Printf("Error resolving safe ID %s: %v", id, err)
+		h.respondError(w, "Safe not found", http.StatusNotFound)
+		return service.SafeRef{}, false
+	}
+
+	return ref, true
+}
+
+// handleSafeError classifies and responds to safe operation errors.
+func (h *SafeHandler) handleSafeError(w http.ResponseWriter, err error, context string) {
+	log.Printf("%s: %v", context, err)
+	if strings.Contains(err.Error(), "not found") {
+		h.respondError(w, err.Error(), http.StatusNotFound)
+	} else if strings.Contains(err.Error(), "directory traversal") || strings.Contains(err.Error(), "invalid safe path") || strings.Contains(err.Error(), "path traversal") {
+		h.respondError(w, "Invalid safe path", http.StatusBadRequest)
+	} else {
+		h.respondError(w, "Invalid password or corrupted file", http.StatusUnauthorized)
+	}
 }
 
 // extractSafeID extracts the safe ID from URL path

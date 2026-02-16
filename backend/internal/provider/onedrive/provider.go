@@ -71,15 +71,14 @@ func Factory(providerID string, dataDir string, baseURL string, providerConfig m
 // NewOneDriveProvider creates a new OneDrive provider
 // storageDir is the provider's directory where tokens and data are stored
 func NewOneDriveProvider(storageDir, clientID, redirectURI string) (*OneDriveProvider, error) {
-	// Auto-create data folder
-	if err := os.MkdirAll(storageDir, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create provider data directory: %w", err)
-	}
-
 	p := &OneDriveProvider{
 		storageDir:  storageDir,
 		clientID:    clientID,
 		redirectURI: redirectURI,
+	}
+	// Auto-create data folder
+	if err := p.ensureStorageDir(); err != nil {
+		return nil, fmt.Errorf("failed to create provider data directory: %w", err)
 	}
 	// Clean up any stale code verifier from previous runs
 	p.cleanupStaleCodeVerifier()
@@ -172,13 +171,13 @@ func (p *OneDriveProvider) HandleCallback(ctx context.Context, code string, stat
 	}
 
 	// Exchange code for tokens
-	newTokens, err := p.exchangeCodeForTokens(code, codeVerifier)
+	newTokens, err := p.exchangeCodeForTokens(ctx, code, codeVerifier)
 	if err != nil {
 		return fmt.Errorf("failed to exchange code for tokens: %w", err)
 	}
 
 	// Get user profile
-	accountName, accountEmail, err := p.getUserProfile(newTokens.AccessToken)
+	accountName, accountEmail, err := p.getUserProfile(ctx, newTokens.AccessToken)
 	if err != nil {
 		// Non-fatal: continue without profile info
 		accountName = ""
@@ -201,8 +200,7 @@ func (p *OneDriveProvider) HandleCallback(ctx context.Context, code string, stat
 
 func (p *OneDriveProvider) Disconnect(ctx context.Context) error {
 	// Remove tokens file
-	tokensPath := filepath.Join(p.storageDir, ".tokens.json")
-	if err := os.Remove(tokensPath); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(p.tokensPath()); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	// Delete code verifier if exists
@@ -236,7 +234,7 @@ func (p *OneDriveProvider) GetConnectionStatus(ctx context.Context, attemptRefre
 
 	// If requested, verify we can actually refresh the token
 	if attemptRefresh {
-		if _, err := p.getValidAccessToken(); err != nil {
+		if _, err := p.getValidAccessToken(ctx); err != nil {
 			status.NeedsReauth = true
 		}
 	}
@@ -247,19 +245,13 @@ func (p *OneDriveProvider) GetConnectionStatus(ctx context.Context, attemptRefre
 // ============ REMOTE OPERATIONS (2 methods - the core primitives) ============
 
 func (p *OneDriveProvider) ListRemoteFiles(ctx context.Context) ([]provider.RemoteFile, error) {
-	accessToken, err := p.getValidAccessToken()
+	accessToken, err := p.getValidAccessToken(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	searchURL := msGraphURL + "/me/drive/root/search(q='.psafe3')"
-	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := p.doAuthRequest(ctx, "GET", searchURL, accessToken, nil)
 	if err != nil {
 		return nil, fmt.Errorf("search request failed: %w", err)
 	}
@@ -315,19 +307,13 @@ func (p *OneDriveProvider) ListRemoteFiles(ctx context.Context) ([]provider.Remo
 }
 
 func (p *OneDriveProvider) DownloadFile(ctx context.Context, fileID string) (*provider.DownloadResult, error) {
-	accessToken, err := p.getValidAccessToken()
+	accessToken, err := p.getValidAccessToken(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	downloadURL := fmt.Sprintf("%s/me/drive/items/%s/content", msGraphURL, fileID)
-	req, err := http.NewRequestWithContext(ctx, "GET", downloadURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := p.doAuthRequest(ctx, "GET", downloadURL, accessToken, nil)
 	if err != nil {
 		return nil, fmt.Errorf("download request failed: %w", err)
 	}
@@ -345,11 +331,63 @@ func (p *OneDriveProvider) DownloadFile(ctx context.Context, fileID string) (*pr
 	}, nil
 }
 
-// ============ PRIVATE HELPERS (token management) ============
+// ============ PRIVATE HELPERS (path and storage) ============
 
 func (p *OneDriveProvider) tokensPath() string {
 	return filepath.Join(p.storageDir, ".tokens.json")
 }
+
+func (p *OneDriveProvider) codeVerifierPath() string {
+	return filepath.Join(p.storageDir, ".code_verifier")
+}
+
+func (p *OneDriveProvider) oauthStatePath() string {
+	return filepath.Join(p.storageDir, ".oauth_state")
+}
+
+func (p *OneDriveProvider) ensureStorageDir() error {
+	return os.MkdirAll(p.storageDir, 0700)
+}
+
+// storeStateFile writes content to a state file in the storage directory
+func (p *OneDriveProvider) storeStateFile(path, content string) error {
+	if err := p.ensureStorageDir(); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(content), 0600)
+}
+
+// loadStateFile reads content from a state file
+func (p *OneDriveProvider) loadStateFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// deleteStateFile removes a state file
+func (p *OneDriveProvider) deleteStateFile(path string) {
+	os.Remove(path)
+}
+
+// doAuthRequest performs an authenticated HTTP request with the given access token
+func (p *OneDriveProvider) doAuthRequest(ctx context.Context, method, url, accessToken string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+
+	return resp, nil
+}
+
+// ============ PRIVATE HELPERS (token management) ============
 
 func (p *OneDriveProvider) loadTokens() (*tokens, error) {
 	data, err := os.ReadFile(p.tokensPath())
@@ -364,7 +402,7 @@ func (p *OneDriveProvider) loadTokens() (*tokens, error) {
 }
 
 func (p *OneDriveProvider) storeTokens(t *tokens) error {
-	if err := os.MkdirAll(p.storageDir, 0700); err != nil {
+	if err := p.ensureStorageDir(); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(t, "", "  ")
@@ -374,7 +412,7 @@ func (p *OneDriveProvider) storeTokens(t *tokens) error {
 	return os.WriteFile(p.tokensPath(), data, 0600)
 }
 
-func (p *OneDriveProvider) getValidAccessToken() (string, error) {
+func (p *OneDriveProvider) getValidAccessToken(ctx context.Context) (string, error) {
 	p.tokenMutex.Lock()
 	defer p.tokenMutex.Unlock()
 
@@ -402,7 +440,7 @@ func (p *OneDriveProvider) getValidAccessToken() (string, error) {
 		return "", fmt.Errorf("REAUTH_REQUIRED: token expired and no refresh token")
 	}
 
-	newTokens, err := p.refreshAccessToken(t)
+	newTokens, err := p.refreshAccessToken(ctx, t)
 	if err != nil {
 		return "", err
 	}
@@ -410,7 +448,7 @@ func (p *OneDriveProvider) getValidAccessToken() (string, error) {
 	return newTokens.AccessToken, nil
 }
 
-func (p *OneDriveProvider) refreshAccessToken(t *tokens) (*tokens, error) {
+func (p *OneDriveProvider) refreshAccessToken(ctx context.Context, t *tokens) (*tokens, error) {
 	formData := url.Values{
 		"client_id":     {p.clientID},
 		"grant_type":    {"refresh_token"},
@@ -418,7 +456,13 @@ func (p *OneDriveProvider) refreshAccessToken(t *tokens) (*tokens, error) {
 		"scope":         {onedriveScopes},
 	}
 
-	resp, err := http.PostForm(msTokenURL, formData)
+	req, err := http.NewRequestWithContext(ctx, "POST", msTokenURL, strings.NewReader(formData.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create refresh request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("refresh request failed: %w", err)
 	}
@@ -467,7 +511,7 @@ func (p *OneDriveProvider) refreshAccessToken(t *tokens) (*tokens, error) {
 	return newTokens, nil
 }
 
-func (p *OneDriveProvider) exchangeCodeForTokens(code, codeVerifier string) (*tokens, error) {
+func (p *OneDriveProvider) exchangeCodeForTokens(ctx context.Context, code, codeVerifier string) (*tokens, error) {
 	data := url.Values{
 		"client_id":     {p.clientID},
 		"code":          {code},
@@ -476,7 +520,13 @@ func (p *OneDriveProvider) exchangeCodeForTokens(code, codeVerifier string) (*to
 		"code_verifier": {codeVerifier},
 	}
 
-	resp, err := http.PostForm(msTokenURL, data)
+	req, err := http.NewRequestWithContext(ctx, "POST", msTokenURL, strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("token request failed: %w", err)
 	}
@@ -510,14 +560,8 @@ func (p *OneDriveProvider) exchangeCodeForTokens(code, codeVerifier string) (*to
 	}, nil
 }
 
-func (p *OneDriveProvider) getUserProfile(accessToken string) (name, email string, err error) {
-	req, err := http.NewRequest("GET", msGraphURL+"/me", nil)
-	if err != nil {
-		return "", "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-
-	resp, err := http.DefaultClient.Do(req)
+func (p *OneDriveProvider) getUserProfile(ctx context.Context, accessToken string) (name, email string, err error) {
+	resp, err := p.doAuthRequest(ctx, "GET", msGraphURL+"/me", accessToken, nil)
 	if err != nil {
 		return "", "", err
 	}
@@ -546,15 +590,11 @@ func (p *OneDriveProvider) getUserProfile(accessToken string) (name, email strin
 }
 
 func (p *OneDriveProvider) storeCodeVerifier(verifier string) error {
-	if err := os.MkdirAll(p.storageDir, 0700); err != nil {
-		return err
-	}
-	verifierPath := filepath.Join(p.storageDir, ".code_verifier")
-	return os.WriteFile(verifierPath, []byte(verifier), 0600)
+	return p.storeStateFile(p.codeVerifierPath(), verifier)
 }
 
 func (p *OneDriveProvider) loadCodeVerifier() (string, error) {
-	verifierPath := filepath.Join(p.storageDir, ".code_verifier")
+	verifierPath := p.codeVerifierPath()
 
 	// Check file age before reading
 	stat, err := os.Stat(verifierPath)
@@ -567,40 +607,28 @@ func (p *OneDriveProvider) loadCodeVerifier() (string, error) {
 		return "", fmt.Errorf("code verifier expired")
 	}
 
-	data, err := os.ReadFile(verifierPath)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
+	return p.loadStateFile(verifierPath)
 }
 
 func (p *OneDriveProvider) deleteCodeVerifier() {
-	verifierPath := filepath.Join(p.storageDir, ".code_verifier")
-	os.Remove(verifierPath)
+	p.deleteStateFile(p.codeVerifierPath())
 }
 
 func (p *OneDriveProvider) storeOAuthState(state string) error {
-	statePath := filepath.Join(p.storageDir, ".oauth_state")
-	return os.WriteFile(statePath, []byte(state), 0600)
+	return p.storeStateFile(p.oauthStatePath(), state)
 }
 
 func (p *OneDriveProvider) loadOAuthState() (string, error) {
-	statePath := filepath.Join(p.storageDir, ".oauth_state")
-	data, err := os.ReadFile(statePath)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
+	return p.loadStateFile(p.oauthStatePath())
 }
 
 func (p *OneDriveProvider) deleteOAuthState() {
-	statePath := filepath.Join(p.storageDir, ".oauth_state")
-	os.Remove(statePath)
+	p.deleteStateFile(p.oauthStatePath())
 }
 
 // cleanupStaleCodeVerifier removes any expired code verifier from previous runs
 func (p *OneDriveProvider) cleanupStaleCodeVerifier() {
-	verifierPath := filepath.Join(p.storageDir, ".code_verifier")
+	verifierPath := p.codeVerifierPath()
 	stat, err := os.Stat(verifierPath)
 	if err != nil {
 		return // File doesn't exist
