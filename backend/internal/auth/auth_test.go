@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/rolledback/pwsafe-service/backend/internal/config"
 )
 
@@ -31,23 +33,23 @@ func TestGetMode_Unset(t *testing.T) {
 	}
 }
 
-func TestSetup_Unsecured(t *testing.T) {
+func TestSetup_Disabled(t *testing.T) {
 	svc, _, _ := newTestService(t)
-	if err := svc.Setup("unsecured", ""); err != nil {
+	if err := svc.Setup("disabled", ""); err != nil {
 		t.Fatalf("Setup failed: %v", err)
 	}
-	if mode := svc.GetMode(); mode != "unsecured" {
-		t.Errorf("expected 'unsecured', got %q", mode)
+	if mode := svc.GetMode(); mode != "disabled" {
+		t.Errorf("expected 'disabled', got %q", mode)
 	}
 }
 
-func TestSetup_Secured(t *testing.T) {
+func TestSetup_Enabled(t *testing.T) {
 	svc, dataDir, _ := newTestService(t)
-	if err := svc.Setup("secured", "mypassword"); err != nil {
+	if err := svc.Setup("enabled", "mypassword"); err != nil {
 		t.Fatalf("Setup failed: %v", err)
 	}
-	if mode := svc.GetMode(); mode != "secured" {
-		t.Errorf("expected 'secured', got %q", mode)
+	if mode := svc.GetMode(); mode != "enabled" {
+		t.Errorf("expected 'enabled', got %q", mode)
 	}
 	// Verify hash file exists
 	hashPath := filepath.Join(dataDir, ".password_hash")
@@ -62,10 +64,10 @@ func TestSetup_Secured(t *testing.T) {
 
 func TestSetup_BlockedAfterModeSet(t *testing.T) {
 	svc, _, _ := newTestService(t)
-	if err := svc.Setup("unsecured", ""); err != nil {
+	if err := svc.Setup("disabled", ""); err != nil {
 		t.Fatalf("first Setup failed: %v", err)
 	}
-	err := svc.Setup("secured", "password")
+	err := svc.Setup("enabled", "password")
 	if err == nil {
 		t.Fatal("expected error on second Setup, got nil")
 	}
@@ -81,16 +83,16 @@ func TestSetup_InvalidMode(t *testing.T) {
 	}
 }
 
-func TestSetup_SecuredNoPassword(t *testing.T) {
+func TestSetup_EnabledNoPassword(t *testing.T) {
 	svc, _, _ := newTestService(t)
-	if err := svc.Setup("secured", ""); err == nil {
-		t.Fatal("expected error for secured mode without password")
+	if err := svc.Setup("enabled", ""); err == nil {
+		t.Fatal("expected error for enabled auth mode without password")
 	}
 }
 
 func TestLogin_Success(t *testing.T) {
 	svc, _, _ := newTestService(t)
-	if err := svc.Setup("secured", "testpass"); err != nil {
+	if err := svc.Setup("enabled", "testpass"); err != nil {
 		t.Fatalf("Setup failed: %v", err)
 	}
 	sessionID, err := svc.Login("testpass", "127.0.0.1")
@@ -107,7 +109,7 @@ func TestLogin_Success(t *testing.T) {
 
 func TestLogin_WrongPassword(t *testing.T) {
 	svc, _, _ := newTestService(t)
-	if err := svc.Setup("secured", "testpass"); err != nil {
+	if err := svc.Setup("enabled", "testpass"); err != nil {
 		t.Fatalf("Setup failed: %v", err)
 	}
 	_, err := svc.Login("wrongpass", "127.0.0.1")
@@ -118,7 +120,7 @@ func TestLogin_WrongPassword(t *testing.T) {
 
 func TestSession_Validation(t *testing.T) {
 	svc, _, _ := newTestService(t)
-	svc.Setup("secured", "pass")
+	svc.Setup("enabled", "pass")
 
 	sessionID, _ := svc.Login("pass", "127.0.0.1")
 
@@ -142,7 +144,7 @@ func TestSession_Expiry(t *testing.T) {
 		Auth: &config.AuthConfig{SessionTimeout: "100ms"},
 	}
 	svc := NewAuthService(dataDir, configDir, settings)
-	svc.Setup("secured", "pass")
+	svc.Setup("enabled", "pass")
 
 	sessionID, _ := svc.Login("pass", "127.0.0.1")
 	if !svc.ValidateSession(sessionID, "127.0.0.1") {
@@ -157,7 +159,7 @@ func TestSession_Expiry(t *testing.T) {
 
 func TestSession_InvalidationOnNewLogin(t *testing.T) {
 	svc, _, _ := newTestService(t)
-	svc.Setup("secured", "pass")
+	svc.Setup("enabled", "pass")
 
 	session1, _ := svc.Login("pass", "10.0.0.1")
 	session2, _ := svc.Login("pass", "10.0.0.1")
@@ -172,11 +174,11 @@ func TestSession_InvalidationOnNewLogin(t *testing.T) {
 
 func TestSession_MaxCap(t *testing.T) {
 	svc, _, _ := newTestService(t)
-	svc.Setup("secured", "pass")
+	svc.Setup("enabled", "pass")
 
-	// Create maxSessions sessions from different IPs, track the oldest
+	// Create defaultMaxSessions sessions from different IPs, track the oldest
 	var oldestSessionID string
-	for i := 0; i < maxSessions; i++ {
+	for i := 0; i < defaultMaxSessions; i++ {
 		ip := fmt.Sprintf("10.0.0.%d", i)
 		sid, err := svc.Login("pass", ip)
 		if err != nil {
@@ -187,8 +189,8 @@ func TestSession_MaxCap(t *testing.T) {
 		}
 	}
 
-	if svc.SessionCount() != maxSessions {
-		t.Errorf("expected %d sessions, got %d", maxSessions, svc.SessionCount())
+	if svc.SessionCount() != defaultMaxSessions {
+		t.Errorf("expected %d sessions, got %d", defaultMaxSessions, svc.SessionCount())
 	}
 
 	// One more login should still succeed (evicts oldest)
@@ -202,14 +204,14 @@ func TestSession_MaxCap(t *testing.T) {
 	if svc.ValidateSession(oldestSessionID, "10.0.0.0") {
 		t.Error("oldest session should have been evicted")
 	}
-	if svc.SessionCount() != maxSessions {
-		t.Errorf("expected %d sessions after cap, got %d", maxSessions, svc.SessionCount())
+	if svc.SessionCount() != defaultMaxSessions {
+		t.Errorf("expected %d sessions after cap, got %d", defaultMaxSessions, svc.SessionCount())
 	}
 }
 
 func TestLogout(t *testing.T) {
 	svc, _, _ := newTestService(t)
-	svc.Setup("secured", "pass")
+	svc.Setup("enabled", "pass")
 
 	sessionID, _ := svc.Login("pass", "127.0.0.1")
 	svc.Logout(sessionID)
@@ -219,50 +221,12 @@ func TestLogout(t *testing.T) {
 	}
 }
 
-func TestIPBan_Tracking(t *testing.T) {
-	svc, _, _ := newTestService(t)
-
-	ip := "10.0.0.1"
-	if svc.IsIPBanned(ip) {
-		t.Error("IP should not be banned initially")
-	}
-
-	// Record hits below threshold
-	for i := 0; i < banThreshold-1; i++ {
-		svc.RecordRateLimitHit(ip)
-	}
-	if svc.IsIPBanned(ip) {
-		t.Error("IP should not be banned below threshold")
-	}
-
-	// One more hit should trigger ban
-	svc.RecordRateLimitHit(ip)
-	if !svc.IsIPBanned(ip) {
-		t.Error("IP should be banned after reaching threshold")
-	}
-}
-
-func TestIPBan_DifferentIPs(t *testing.T) {
-	svc, _, _ := newTestService(t)
-
-	// Ban one IP
-	for i := 0; i < banThreshold; i++ {
-		svc.RecordRateLimitHit("10.0.0.1")
-	}
-	if !svc.IsIPBanned("10.0.0.1") {
-		t.Error("10.0.0.1 should be banned")
-	}
-	if svc.IsIPBanned("10.0.0.2") {
-		t.Error("10.0.0.2 should not be banned")
-	}
-}
-
 func TestPasswordHashFile_Permissions(t *testing.T) {
 	if os.Getenv("OS") == "Windows_NT" {
 		t.Skip("file permissions not reliable on Windows")
 	}
 	svc, dataDir, _ := newTestService(t)
-	svc.Setup("secured", "pass")
+	svc.Setup("enabled", "pass")
 
 	hashPath := filepath.Join(dataDir, ".password_hash")
 	info, err := os.Stat(hashPath)
@@ -353,7 +317,7 @@ func TestCleanupExpiredSessions(t *testing.T) {
 		Auth: &config.AuthConfig{SessionTimeout: "50ms"},
 	}
 	svc := NewAuthService(dataDir, configDir, settings)
-	svc.Setup("secured", "pass")
+	svc.Setup("enabled", "pass")
 
 	sessionID, _ := svc.Login("pass", "127.0.0.1")
 	if !svc.ValidateSession(sessionID, "127.0.0.1") {
@@ -382,7 +346,7 @@ func TestSession_AbsoluteLifetime(t *testing.T) {
 		Auth: &config.AuthConfig{SessionTimeout: "10s"},
 	}
 	svc := NewAuthService(dataDir, configDir, settings)
-	svc.Setup("secured", "pass")
+	svc.Setup("enabled", "pass")
 
 	sessionID, err := svc.Login("pass", "127.0.0.1")
 	if err != nil {
@@ -392,9 +356,9 @@ func TestSession_AbsoluteLifetime(t *testing.T) {
 		t.Fatal("session should be valid immediately")
 	}
 
-	// Manually set CreatedAt to 25 hours ago to exceed maxAbsoluteLifetime (24h)
+	// Manually set CreatedAt to exceed defaultMaxAbsoluteLifetime (30m)
 	svc.mu.Lock()
-	svc.sessions[sessionID].CreatedAt = time.Now().Add(-25 * time.Hour)
+	svc.sessions[sessionID].CreatedAt = time.Now().Add(-31 * time.Minute)
 	svc.mu.Unlock()
 
 	if svc.ValidateSession(sessionID, "127.0.0.1") {
@@ -404,7 +368,7 @@ func TestSession_AbsoluteLifetime(t *testing.T) {
 
 func TestValidateSession_ExtendsExpiry(t *testing.T) {
 	svc, _, _ := newTestService(t)
-	svc.Setup("secured", "pass")
+	svc.Setup("enabled", "pass")
 
 	sessionID, _ := svc.Login("pass", "127.0.0.1")
 
@@ -441,7 +405,7 @@ func TestValidateSession_ExtendsExpiry(t *testing.T) {
 
 func TestSession_IPMismatch(t *testing.T) {
 	svc, _, _ := newTestService(t)
-	svc.Setup("secured", "pass")
+	svc.Setup("enabled", "pass")
 
 	sessionID, _ := svc.Login("pass", "10.0.0.1")
 
@@ -466,59 +430,15 @@ func TestSession_IPMismatch(t *testing.T) {
 	}
 }
 
-func TestIPBan_Expiry(t *testing.T) {
-	svc, _, _ := newTestService(t)
-
-	ip := "10.0.0.99"
-	for i := 0; i < banThreshold; i++ {
-		svc.RecordRateLimitHit(ip)
-	}
-	if !svc.IsIPBanned(ip) {
-		t.Fatal("IP should be banned after reaching threshold")
-	}
-
-	// Manually expire the ban
-	svc.mu.Lock()
-	svc.ipBans[ip].expiresAt = time.Now().Add(-1 * time.Second)
-	svc.mu.Unlock()
-
-	if svc.IsIPBanned(ip) {
-		t.Error("IP should not be banned after ban expires")
-	}
-}
-
-func TestRateLimitHits_OutsideWindow(t *testing.T) {
-	svc, _, _ := newTestService(t)
-
-	ip := "10.0.0.50"
-	// Manually add old hits outside the ban window
-	svc.mu.Lock()
-	svc.rateLimitHits[ip] = &rateLimitHit{
-		timestamps: []time.Time{
-			time.Now().Add(-banWindow - 2*time.Minute),
-			time.Now().Add(-banWindow - 1*time.Minute),
-			time.Now().Add(-banWindow - 30*time.Second),
-		},
-	}
-	svc.mu.Unlock()
-
-	// Record one new hit (total in-window = 1, below threshold)
-	svc.RecordRateLimitHit(ip)
-
-	if svc.IsIPBanned(ip) {
-		t.Error("IP should not be banned when old hits are outside the window")
-	}
-}
-
 func TestLogin_MissingHashFile(t *testing.T) {
 	svc, _, _ := newTestService(t)
 
-	// Set mode to "secured" manually without creating hash file
+	// Set mode to "enabled" manually without creating hash file
 	svc.mu.Lock()
 	if svc.settings.Auth == nil {
 		svc.settings.Auth = &config.AuthConfig{}
 	}
-	svc.settings.Auth.Mode = "secured"
+	svc.settings.Auth.Mode = "enabled"
 	svc.mu.Unlock()
 
 	_, err := svc.Login("pass", "127.0.0.1")
@@ -545,15 +465,174 @@ func TestNewAuthService_InvalidTimeout(t *testing.T) {
 	}
 }
 
-// itoa is a simple int-to-string helper to avoid importing strconv in tests
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
+func TestNewAuthService_InvalidBcryptCost(t *testing.T) {
+	tests := []struct {
+		name string
+		cost int
+	}{
+		{"too low", 2},
+		{"too high", 40},
+		{"negative", -1},
 	}
-	result := ""
-	for n > 0 {
-		result = string(rune('0'+n%10)) + result
-		n /= 10
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dataDir := t.TempDir()
+			configDir := t.TempDir()
+			os.WriteFile(filepath.Join(configDir, "settings.json"), []byte("{}"), 0644)
+
+			settings := &config.Settings{
+				Auth: &config.AuthConfig{BcryptCost: tc.cost},
+			}
+			svc := NewAuthService(dataDir, configDir, settings)
+
+			if svc.GetBcryptCost() != defaultBcryptCost {
+				t.Errorf("expected default bcrypt cost %d for invalid value %d, got %d", defaultBcryptCost, tc.cost, svc.GetBcryptCost())
+			}
+		})
 	}
-	return result
+}
+
+func TestNewAuthService_InvalidMaxSessions(t *testing.T) {
+	tests := []struct {
+		name string
+		val  int
+	}{
+		{"negative", -1},
+		{"too high", 20000},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dataDir := t.TempDir()
+			configDir := t.TempDir()
+			os.WriteFile(filepath.Join(configDir, "settings.json"), []byte("{}"), 0644)
+
+			settings := &config.Settings{
+				Auth: &config.AuthConfig{MaxSessions: tc.val},
+			}
+			svc := NewAuthService(dataDir, configDir, settings)
+
+			if svc.GetMaxSessions() != defaultMaxSessions {
+				t.Errorf("expected default max sessions %d for invalid value %d, got %d", defaultMaxSessions, tc.val, svc.GetMaxSessions())
+			}
+		})
+	}
+}
+
+func TestNewAuthService_InvalidMaxSessionLifetime(t *testing.T) {
+	tests := []struct {
+		name string
+		val  string
+	}{
+		{"unparseable", "bogus"},
+		{"too short", "30s"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dataDir := t.TempDir()
+			configDir := t.TempDir()
+			os.WriteFile(filepath.Join(configDir, "settings.json"), []byte("{}"), 0644)
+
+			settings := &config.Settings{
+				Auth: &config.AuthConfig{MaxSessionLifetime: tc.val},
+			}
+			svc := NewAuthService(dataDir, configDir, settings)
+
+			if svc.GetMaxAbsoluteLifetime() != defaultMaxAbsoluteLifetime {
+				t.Errorf("expected default max absolute lifetime %s for invalid value %q, got %s", defaultMaxAbsoluteLifetime, tc.val, svc.GetMaxAbsoluteLifetime())
+			}
+		})
+	}
+}
+
+func TestSession_MaxCapCustom(t *testing.T) {
+	dataDir := t.TempDir()
+	configDir := t.TempDir()
+	os.WriteFile(filepath.Join(configDir, "settings.json"), []byte("{}"), 0644)
+
+	settings := &config.Settings{
+		Auth: &config.AuthConfig{MaxSessions: 2},
+	}
+	svc := NewAuthService(dataDir, configDir, settings)
+	svc.Setup("enabled", "pass")
+
+	// Create 2 sessions from different IPs
+	sid1, _ := svc.Login("pass", "10.0.0.1")
+	svc.Login("pass", "10.0.0.2")
+
+	if svc.SessionCount() != 2 {
+		t.Errorf("expected 2 sessions, got %d", svc.SessionCount())
+	}
+
+	// Third login should evict oldest
+	svc.Login("pass", "10.0.0.3")
+	if svc.SessionCount() != 2 {
+		t.Errorf("expected 2 sessions after eviction, got %d", svc.SessionCount())
+	}
+	if svc.ValidateSession(sid1, "10.0.0.1") {
+		t.Error("oldest session should have been evicted")
+	}
+}
+
+func TestSession_CustomAbsoluteLifetime(t *testing.T) {
+	dataDir := t.TempDir()
+	configDir := t.TempDir()
+	os.WriteFile(filepath.Join(configDir, "settings.json"), []byte("{}"), 0644)
+
+	settings := &config.Settings{
+		Auth: &config.AuthConfig{
+			SessionTimeout:     "10s",
+			MaxSessionLifetime: "1m",
+		},
+	}
+	svc := NewAuthService(dataDir, configDir, settings)
+	svc.Setup("enabled", "pass")
+
+	sessionID, _ := svc.Login("pass", "127.0.0.1")
+	if !svc.ValidateSession(sessionID, "127.0.0.1") {
+		t.Fatal("session should be valid immediately")
+	}
+
+	// Manually set CreatedAt to exceed the configured 1m lifetime
+	svc.mu.Lock()
+	svc.sessions[sessionID].CreatedAt = time.Now().Add(-61 * time.Second)
+	svc.mu.Unlock()
+
+	if svc.ValidateSession(sessionID, "127.0.0.1") {
+		t.Error("session should be expired by absolute lifetime")
+	}
+}
+
+func TestNewAuthService_BcryptCostUsedInSetup(t *testing.T) {
+	dataDir := t.TempDir()
+	configDir := t.TempDir()
+	os.WriteFile(filepath.Join(configDir, "settings.json"), []byte("{}"), 0644)
+
+	settings := &config.Settings{
+		Auth: &config.AuthConfig{BcryptCost: 4},
+	}
+	svc := NewAuthService(dataDir, configDir, settings)
+
+	if err := svc.Setup("enabled", "testpass"); err != nil {
+		t.Fatalf("Setup failed: %v", err)
+	}
+
+	// Verify the hash was generated with the configured cost
+	hashPath := filepath.Join(dataDir, ".password_hash")
+	hash, err := os.ReadFile(hashPath)
+	if err != nil {
+		t.Fatalf("failed to read hash file: %v", err)
+	}
+	cost, err := bcrypt.Cost(hash)
+	if err != nil {
+		t.Fatalf("failed to get bcrypt cost: %v", err)
+	}
+	if cost != 4 {
+		t.Errorf("expected bcrypt cost 4, got %d", cost)
+	}
+
+	// Login should still work with the lower cost hash
+	_, err = svc.Login("testpass", "127.0.0.1")
+	if err != nil {
+		t.Fatalf("Login failed with custom bcrypt cost: %v", err)
+	}
 }

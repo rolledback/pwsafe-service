@@ -6,14 +6,14 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const STRICT_RATE_WAIT = 5500;
 
 describe("Auth setup flow", () => {
-  describe("unsecured setup", () => {
+  describe("disabled setup", () => {
     let server: ServerInstance;
     let api: ApiClient;
 
     beforeAll(async () => {
       server = new ServerInstance({ skipAuthSetup: true });
       await server.start();
-      api = new ApiClient(server.baseUrl, server.apiToken);
+      api = new ApiClient(server.baseUrl, server.csrfToken);
     });
 
     afterAll(async () => {
@@ -27,9 +27,9 @@ describe("Auth setup flow", () => {
       expect(body.mode).toBe("unset");
     });
 
-    it("setup with unsecured mode succeeds", async () => {
+    it("setup with disabled mode succeeds", async () => {
       const resp = await api.raw("POST", "/api/auth/setup", {
-        body: JSON.stringify({ mode: "unsecured" }),
+        body: JSON.stringify({ mode: "disabled" }),
         headers: { "Content-Type": "application/json" },
       });
       expect(resp.status).toBe(200);
@@ -37,39 +37,39 @@ describe("Auth setup flow", () => {
       expect(body.status).toBe("ok");
     });
 
-    it("status is unsecured after setup", async () => {
+    it("status is disabled after setup", async () => {
       const resp = await api.raw("GET", "/api/auth/status");
       const body = await resp.json();
-      expect(body.mode).toBe("unsecured");
+      expect(body.mode).toBe("disabled");
       expect(body.authenticated).toBe(true);
     });
 
     it("setup again returns 403", async () => {
       const resp = await api.raw("POST", "/api/auth/setup", {
-        body: JSON.stringify({ mode: "unsecured" }),
+        body: JSON.stringify({ mode: "disabled" }),
         headers: { "Content-Type": "application/json" },
       });
       expect(resp.status).toBe(403);
     });
   });
 
-  describe("secured setup", () => {
+  describe("enabled setup", () => {
     let server: ServerInstance;
     let api: ApiClient;
 
     beforeAll(async () => {
       server = new ServerInstance({ skipAuthSetup: true });
       await server.start();
-      api = new ApiClient(server.baseUrl, server.apiToken);
+      api = new ApiClient(server.baseUrl, server.csrfToken);
     });
 
     afterAll(async () => {
       await server.stop();
     });
 
-    it("setup with secured mode and password succeeds", async () => {
+    it("setup with enabled mode and password succeeds", async () => {
       const resp = await api.raw("POST", "/api/auth/setup", {
-        body: JSON.stringify({ mode: "secured", password: "mypassword" }),
+        body: JSON.stringify({ mode: "enabled", password: "mypassword" }),
         headers: { "Content-Type": "application/json" },
       });
       expect(resp.status).toBe(200);
@@ -77,16 +77,16 @@ describe("Auth setup flow", () => {
       expect(body.status).toBe("ok");
     });
 
-    it("status shows secured mode, not authenticated", async () => {
+    it("status shows enabled mode, not authenticated", async () => {
       const resp = await api.raw("GET", "/api/auth/status");
       const body = await resp.json();
-      expect(body.mode).toBe("secured");
+      expect(body.mode).toBe("enabled");
       expect(body.authenticated).toBe(false);
     });
 
     it("setup again returns 403", async () => {
       const resp = await api.raw("POST", "/api/auth/setup", {
-        body: JSON.stringify({ mode: "secured", password: "other" }),
+        body: JSON.stringify({ mode: "enabled", password: "other" }),
         headers: { "Content-Type": "application/json" },
       });
       expect(resp.status).toBe(403);
@@ -100,7 +100,7 @@ describe("Auth setup flow", () => {
     beforeAll(async () => {
       server = new ServerInstance({ skipAuthSetup: true });
       await server.start();
-      api = new ApiClient(server.baseUrl, server.apiToken);
+      api = new ApiClient(server.baseUrl, server.csrfToken);
     });
 
     afterAll(async () => {
@@ -115,9 +115,9 @@ describe("Auth setup flow", () => {
       expect(resp.status).toBe(400);
     });
 
-    it("setup secured without password returns 400", async () => {
+    it("setup enabled without password returns 400", async () => {
       const resp = await api.raw("POST", "/api/auth/setup", {
-        body: JSON.stringify({ mode: "secured" }),
+        body: JSON.stringify({ mode: "enabled" }),
         headers: { "Content-Type": "application/json" },
       });
       expect(resp.status).toBe(400);
@@ -146,7 +146,7 @@ describe("Auth setup flow", () => {
     beforeAll(async () => {
       server = new ServerInstance({ skipAuthSetup: true });
       await server.start();
-      api = new ApiClient(server.baseUrl, server.apiToken);
+      api = new ApiClient(server.baseUrl, server.csrfToken);
     });
 
     afterAll(async () => {
@@ -158,9 +158,9 @@ describe("Auth setup flow", () => {
       expect(resp.status).toBe(503);
     });
 
-    it("after unsecured setup, login endpoint is not needed", async () => {
+    it("after disabled setup, login endpoint is not needed", async () => {
       await api.raw("POST", "/api/auth/setup", {
-        body: JSON.stringify({ mode: "unsecured" }),
+        body: JSON.stringify({ mode: "disabled" }),
         headers: { "Content-Type": "application/json" },
       });
       // Protected endpoints should work without login

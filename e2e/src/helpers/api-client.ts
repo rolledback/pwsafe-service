@@ -13,7 +13,7 @@ export class ApiClient {
 
   constructor(
     private baseUrl: string,
-    private token: string,
+    private csrfToken: string,
   ) {}
 
   async login(password: string): Promise<void> {
@@ -24,14 +24,14 @@ export class ApiClient {
     if (resp.status !== 200) throw new Error(`Login failed: ${resp.status}`);
     const setCookie = resp.headers.get("set-cookie");
     if (setCookie) {
-      const match = setCookie.match(/pwsafe_session=([^;]+)/);
-      if (match) this.cookies["pwsafe_session"] = match[1];
+      const match = setCookie.match(/pwsafe_session_id=([^;]+)/);
+      if (match) this.cookies["pwsafe_session_id"] = match[1];
     }
   }
 
   async logout(): Promise<void> {
     await this.raw("POST", "/api/auth/logout");
-    delete this.cookies["pwsafe_session"];
+    delete this.cookies["pwsafe_session_id"];
   }
 
   // Raw request — returns full Response for status/header inspection
@@ -41,13 +41,13 @@ export class ApiClient {
     options: {
       body?: string | FormData;
       headers?: Record<string, string>;
-      token?: string | null; // null = omit token, undefined = use default
+      csrfToken?: string | null; // null = omit CSRF token, undefined = use default
     } = {},
   ): Promise<Response> {
     const headers: Record<string, string> = { ...options.headers };
 
-    if (options.token !== null) {
-      headers["X-PWSAFE-Token"] = options.token ?? this.token;
+    if (options.csrfToken !== null) {
+      headers["X-PWSAFE-CSRF-Token"] = options.csrfToken ?? this.csrfToken;
     }
 
     if (Object.keys(this.cookies).length > 0) {

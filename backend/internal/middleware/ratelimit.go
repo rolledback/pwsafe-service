@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rolledback/pwsafe-service/backend/internal/config"
 	"golang.org/x/time/rate"
 )
 
@@ -20,6 +21,69 @@ type RateLimiter struct {
 	mu       sync.Mutex
 	rate     rate.Limit
 	burst    int
+}
+
+// RateLimiters holds all rate limiter tiers.
+type RateLimiters struct {
+	Standard *RateLimiter
+	Strict   *RateLimiter
+	Web      *RateLimiter
+}
+
+var rateLimitDefaults = map[string]struct {
+	rate  rate.Limit
+	burst int
+}{
+	"standard": {5, 5},
+	"strict":   {0.2, 2},
+	"web":      {50, 50},
+}
+
+// resolveTier returns the rate and burst for a named tier,
+// using config values if valid or defaults otherwise.
+func resolveTier(cfg *config.RateLimiterConfig, tier string) (rate.Limit, int) {
+	defaults := rateLimitDefaults[tier]
+
+	if cfg == nil {
+		return defaults.rate, defaults.burst
+	}
+
+	var tierCfg *config.RateLimitTierConfig
+	switch tier {
+	case "standard":
+		tierCfg = cfg.Standard
+	case "strict":
+		tierCfg = cfg.Strict
+	case "web":
+		tierCfg = cfg.Web
+	}
+
+	if tierCfg == nil {
+		return defaults.rate, defaults.burst
+	}
+
+	if tierCfg.Rate > 0 && tierCfg.Burst >= 1 {
+		return rate.Limit(tierCfg.Rate), tierCfg.Burst
+	}
+
+	log.Printf("Warning: invalid %s rate limiter config (rate must be >0, burst must be >=1), using defaults", tier)
+	return defaults.rate, defaults.burst
+}
+
+// NewRateLimiters creates all rate limiter tiers from config, using defaults for any unconfigured tier.
+func NewRateLimiters(ctx context.Context, cfg *config.RateLimiterConfig) *RateLimiters {
+	stdRate, stdBurst := resolveTier(cfg, "standard")
+	strictRate, strictBurst := resolveTier(cfg, "strict")
+	webRate, webBurst := resolveTier(cfg, "web")
+
+	log.Printf("Rate limiters: standard=%.2f/s burst=%d, strict=%.2f/s burst=%d, web=%.2f/s burst=%d",
+		float64(stdRate), stdBurst, float64(strictRate), strictBurst, float64(webRate), webBurst)
+
+	return &RateLimiters{
+		Standard: NewRateLimiter(ctx, stdRate, stdBurst),
+		Strict:   NewRateLimiter(ctx, strictRate, strictBurst),
+		Web:      NewRateLimiter(ctx, webRate, webBurst),
+	}
 }
 
 func NewRateLimiter(ctx context.Context, r rate.Limit, b int) *RateLimiter {

@@ -39,22 +39,16 @@ func (h *AuthHandler) Status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check IP ban
 	ip := middleware.GetClientIP(r)
-	if h.authService.IsIPBanned(ip) {
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
-
 	mode := h.authService.GetMode()
 	authenticated := false
 
-	if mode == "secured" {
+	if mode == "enabled" {
 		sessionID := auth.GetSessionIDFromRequest(r)
 		if sessionID != "" {
 			authenticated = h.authService.IsAuthenticated(sessionID, ip)
 		}
-	} else if mode == "unsecured" {
+	} else if mode == "disabled" {
 		authenticated = true
 	}
 
@@ -69,13 +63,6 @@ func (h *AuthHandler) Status(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Setup(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Check IP ban
-	ip := middleware.GetClientIP(r)
-	if h.authService.IsIPBanned(ip) {
-		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 
@@ -105,14 +92,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract IP
 	ip := middleware.GetClientIP(r)
-
-	// Check IP ban
-	if h.authService.IsIPBanned(ip) {
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
 
 	var req loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -122,8 +102,6 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	sessionID, err := h.authService.Login(req.Password, ip)
 	if err != nil {
-		// Record failed login attempt
-		h.authService.RecordRateLimitHit(ip)
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 		return
 	}

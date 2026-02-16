@@ -24,8 +24,6 @@ import (
 	"github.com/rolledback/pwsafe-service/backend/internal/provider/mock"
 	"github.com/rolledback/pwsafe-service/backend/internal/provider/onedrive"
 	"github.com/rolledback/pwsafe-service/backend/internal/service"
-
-	"golang.org/x/time/rate"
 )
 
 func main() {
@@ -96,65 +94,62 @@ func main() {
 	authService := auth.NewAuthService(cfg.DataDirectory, cfg.ConfigDirectory, settings)
 	authHandler := handlers.NewAuthHandler(authService)
 
-	// Log TLS warning for secured mode
-	if authService.GetMode() == "secured" {
-		log.Printf("WARNING: Secured mode active — ensure HTTPS is configured to protect passwords in transit")
+	// Log TLS warning when auth mode is enabled
+	if authService.GetMode() == "enabled" {
+		log.Printf("WARNING: Auth mode enabled — ensure HTTPS is configured to protect passwords in transit")
 	}
 
 	// Start session cleanup goroutine
 	go authService.CleanupExpiredSessions(ctx)
 
-	// General rate limiter
-	rateLimiter := middleware.NewRateLimiter(ctx, rate.Limit(5), 5)
+	// Rate limiters
+	limiters := middleware.NewRateLimiters(ctx, settings.RateLimiter)
 
-	// Strict rate limiter for password-sensitive endpoints
-	strictRateLimiter := middleware.NewRateLimiter(ctx, rate.Limit(0.2), 2)
-
-	// Generate API nonce token
-	tokenBytes := make([]byte, 32)
-	if _, err := io.ReadFull(rand.Reader, tokenBytes); err != nil {
-		log.Fatalf("Failed to generate API token: %v", err)
+	// Generate CSRF token
+	csrfTokenBytes := make([]byte, 32)
+	if _, err := io.ReadFull(rand.Reader, csrfTokenBytes); err != nil {
+		log.Fatalf("Failed to generate CSRF token: %v", err)
 	}
-	apiToken := hex.EncodeToString(tokenBytes)
-	log.Printf("API token generated (changes on each restart)")
+	csrfToken := hex.EncodeToString(csrfTokenBytes)
+	log.Printf("CSRF token generated (changes on each restart)")
 
-	// Read index.html once at startup for token injection
+	// Read index.html once at startup for CSRF token injection
 	indexHTML, err := os.ReadFile(cfg.StaticDir + "/index.html")
 	if err != nil {
 		log.Fatalf("Failed to read index.html: %v", err)
 	}
-	// Inject token into index.html template (insert script before </head>)
+	// Inject CSRF token into index.html template (insert script before </head>)
 	// Uses a placeholder for the CSP nonce which is replaced per-request
-	tokenScript := fmt.Sprintf(`<script nonce="%%NONCE%%">window.__PWSAFE_TOKEN="%s";</script>`, apiToken)
-	indexHTMLTemplate := strings.Replace(string(indexHTML), "</head>", tokenScript+"</head>", 1)
+	csrfScript := fmt.Sprintf(`<script nonce="%%CSP_NONCE%%">window.__PWSAFE_CSRF_TOKEN="%s";</script>`, csrfToken)
+	indexHTMLTemplate := strings.Replace(string(indexHTML), "</head>", csrfScript+"</head>", 1)
 
 	// Auth routes (no RequireAuth)
 	http.HandleFunc("/api/auth/status", middleware.CORS(authHandler.Status))
-	http.HandleFunc("/api/auth/setup", middleware.CORS(middleware.RequireToken(apiToken, strictRateLimiter.Limit(authHandler.Setup))))
-	http.HandleFunc("/api/auth/login", middleware.CORS(middleware.RequireToken(apiToken, strictRateLimiter.Limit(authHandler.Login))))
-	http.HandleFunc("/api/auth/logout", middleware.CORS(middleware.RequireToken(apiToken, middleware.RequireAuth(authService, authHandler.Logout))))
+	http.HandleFunc("/api/auth/setup", middleware.CORS(middleware.RequireCsrfToken(csrfToken, limiters.Strict.Limit(authHandler.Setup))))
+	http.HandleFunc("/api/auth/login", middleware.CORS(middleware.RequireCsrfToken(csrfToken, limiters.Strict.Limit(authHandler.Login))))
+	http.HandleFunc("/api/auth/logout", middleware.CORS(middleware.RequireCsrfToken(csrfToken, middleware.RequireAuth(authService, authHandler.Logout))))
 
 	// Protected API routes (wrapped with RequireAuth)
-	http.HandleFunc("/api/safes", middleware.CORS(middleware.RequireToken(apiToken, middleware.RequireAuth(authService, rateLimiter.Limit(safeHandler.ListSafes)))))
-	http.HandleFunc("/api/safes/", middleware.CORS(middleware.RequireToken(apiToken, middleware.RequireAuth(authService, func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/api/safes", middleware.CORS(middleware.RequireCsrfToken(csrfToken, middleware.RequireAuth(authService, limiters.Standard.Limit(safeHandler.ListSafes)))))
+	http.HandleFunc("/api/safes/", middleware.CORS(middleware.RequireCsrfToken(csrfToken, middleware.RequireAuth(authService, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path[len(r.URL.Path)-7:] == "/unlock" {
-			strictRateLimiter.Limit(safeHandler.UnlockSafe)(w, r)
+			limiters.Strict.Limit(safeHandler.UnlockSafe)(w, r)
 		} else if r.URL.Path[len(r.URL.Path)-6:] == "/entry" {
-			strictRateLimiter.Limit(safeHandler.GetEntryPassword)(w, r)
+			limiters.Strict.Limit(safeHandler.GetEntryPassword)(w, r)
 		} else {
 			http.NotFound(w, r)
 		}
 	}))))
 
 	// Provider routes (new generic API)
-	http.HandleFunc("/api/providers", middleware.CORS(middleware.RequireToken(apiToken, middleware.RequireAuth(authService, rateLimiter.Limit(providersHandler.ListProviders)))))
-	http.HandleFunc("/api/providers/static/", middleware.CORS(middleware.RequireToken(apiToken, middleware.RequireAuth(authService, rateLimiter.Limit(staticProviderHandler.Route)))))
-	http.HandleFunc("/api/providers/", middleware.CORS(middleware.RequireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/api/providers", middleware.CORS(middleware.RequireCsrfToken(csrfToken, middleware.RequireAuth(authService, limiters.Standard.Limit(providersHandler.ListProviders)))))
+	http.HandleFunc("/api/providers/static/", middleware.CORS(middleware.RequireCsrfToken(csrfToken, middleware.RequireAuth(authService, limiters.Standard.Limit(staticProviderHandler.Route)))))
+	http.HandleFunc("/api/providers/", middleware.CORS(middleware.RequireCsrfToken(csrfToken, func(w http.ResponseWriter, r *http.Request) {
 		// Don't rate limit or auth-check callbacks (they come from OAuth redirects)
 		if middleware.IsOAuthCallback(r.URL.Path) {
 			providersHandler.Route(w, r)
 		} else {
-			middleware.RequireAuth(authService, rateLimiter.Limit(providersHandler.Route))(w, r)
+			middleware.RequireAuth(authService, limiters.Standard.Limit(providersHandler.Route))(w, r)
 		}
 	})))
 
@@ -164,7 +159,7 @@ func main() {
 		log.Fatalf("Failed to resolve static dir: %v", err)
 	}
 
-	http.HandleFunc("/web/", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/web/", limiters.Web.Limit(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path[4:] // Remove "/web" prefix
 
 		// For index.html or root, serve injected version with CSP nonce
@@ -191,7 +186,7 @@ func main() {
 		// File exists, serve it
 		fs := http.FileServer(http.Dir(cfg.StaticDir))
 		http.StripPrefix("/web", fs).ServeHTTP(w, r)
-	})
+	}))
 
 	// Redirect all non-/api routes to /web
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -228,13 +223,13 @@ func main() {
 
 // serveInjectedHTML serves the index.html template with a per-request CSP nonce.
 func serveInjectedHTML(w http.ResponseWriter, htmlTemplate string) {
-	nonceBytes := make([]byte, 16)
-	io.ReadFull(rand.Reader, nonceBytes)
-	nonce := base64.StdEncoding.EncodeToString(nonceBytes)
+	cspNonceBytes := make([]byte, 16)
+	io.ReadFull(rand.Reader, cspNonceBytes)
+	cspNonce := base64.StdEncoding.EncodeToString(cspNonceBytes)
 
-	html := strings.Replace(htmlTemplate, "%NONCE%", nonce, -1)
+	html := strings.Replace(htmlTemplate, "%CSP_NONCE%", cspNonce, -1)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Content-Security-Policy",
-		fmt.Sprintf("default-src 'self'; script-src 'self' 'nonce-%s'; img-src 'self' data:", nonce))
+		fmt.Sprintf("default-src 'self'; script-src 'self' 'nonce-%s'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'", cspNonce))
 	w.Write([]byte(html))
 }

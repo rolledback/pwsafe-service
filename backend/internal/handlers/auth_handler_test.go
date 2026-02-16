@@ -24,14 +24,14 @@ func newTestAuthHandler(t *testing.T) *AuthHandler {
 	return NewAuthHandler(svc)
 }
 
-func newSecuredAuthHandler(t *testing.T) *AuthHandler {
+func newEnabledAuthHandler(t *testing.T) *AuthHandler {
 	t.Helper()
 	dataDir := t.TempDir()
 	configDir := t.TempDir()
 	os.WriteFile(filepath.Join(configDir, "settings.json"), []byte("{}"), 0644)
 	settings := &config.Settings{}
 	svc := auth.NewAuthService(dataDir, configDir, settings)
-	svc.Setup("secured", "testpass")
+	svc.Setup("enabled", "testpass")
 	return NewAuthHandler(svc)
 }
 
@@ -53,8 +53,8 @@ func TestStatus_GET_ReturnsMode(t *testing.T) {
 		t.Errorf("expected mode 'unset', got %q", resp["mode"])
 	}
 
-	// After setup → unsecured
-	h.authService.Setup("unsecured", "")
+	// After setup → disabled
+	h.authService.Setup("disabled", "")
 	req2 := httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
 	req2.RemoteAddr = "127.0.0.1:12345"
 	w2 := httptest.NewRecorder()
@@ -65,8 +65,8 @@ func TestStatus_GET_ReturnsMode(t *testing.T) {
 	}
 	var resp2 map[string]interface{}
 	json.NewDecoder(w2.Body).Decode(&resp2)
-	if resp2["mode"] != "unsecured" {
-		t.Errorf("expected mode 'unsecured', got %q", resp2["mode"])
+	if resp2["mode"] != "disabled" {
+		t.Errorf("expected mode 'disabled', got %q", resp2["mode"])
 	}
 }
 
@@ -81,9 +81,9 @@ func TestStatus_WrongMethod(t *testing.T) {
 	}
 }
 
-func TestSetup_POST_Unsecured(t *testing.T) {
+func TestSetup_POST_Disabled(t *testing.T) {
 	h := newTestAuthHandler(t)
-	body, _ := json.Marshal(map[string]string{"mode": "unsecured"})
+	body, _ := json.Marshal(map[string]string{"mode": "disabled"})
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/setup", bytes.NewReader(body))
 	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
@@ -119,7 +119,7 @@ func TestSetup_AlreadyConfigured(t *testing.T) {
 	h := newTestAuthHandler(t)
 
 	// First setup
-	body, _ := json.Marshal(map[string]string{"mode": "unsecured"})
+	body, _ := json.Marshal(map[string]string{"mode": "disabled"})
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/setup", bytes.NewReader(body))
 	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
@@ -129,7 +129,7 @@ func TestSetup_AlreadyConfigured(t *testing.T) {
 	}
 
 	// Second setup → 403
-	body2, _ := json.Marshal(map[string]string{"mode": "secured", "password": "pass"})
+	body2, _ := json.Marshal(map[string]string{"mode": "enabled", "password": "pass"})
 	req2 := httptest.NewRequest(http.MethodPost, "/api/auth/setup", bytes.NewReader(body2))
 	req2.RemoteAddr = "127.0.0.1:12345"
 	w2 := httptest.NewRecorder()
@@ -140,7 +140,7 @@ func TestSetup_AlreadyConfigured(t *testing.T) {
 }
 
 func TestLogin_Success_SetsCookie(t *testing.T) {
-	h := newSecuredAuthHandler(t)
+	h := newEnabledAuthHandler(t)
 	body, _ := json.Marshal(map[string]string{"password": "testpass"})
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
 	req.RemoteAddr = "127.0.0.1:12345"
@@ -154,18 +154,18 @@ func TestLogin_Success_SetsCookie(t *testing.T) {
 	cookies := w.Result().Cookies()
 	found := false
 	for _, c := range cookies {
-		if c.Name == "pwsafe_session" && c.Value != "" {
+		if c.Name == "pwsafe_session_id" && c.Value != "" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Error("expected Set-Cookie with pwsafe_session")
+		t.Error("expected Set-Cookie with pwsafe_session_id")
 	}
 }
 
 func TestLogin_Failure_NoCookie(t *testing.T) {
-	h := newSecuredAuthHandler(t)
+	h := newEnabledAuthHandler(t)
 	body, _ := json.Marshal(map[string]string{"password": "wrongpass"})
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
 	req.RemoteAddr = "127.0.0.1:12345"
@@ -177,13 +177,13 @@ func TestLogin_Failure_NoCookie(t *testing.T) {
 	}
 
 	setCookie := w.Header().Get("Set-Cookie")
-	if strings.Contains(setCookie, "pwsafe_session") {
-		t.Error("should not set pwsafe_session cookie on failed login")
+	if strings.Contains(setCookie, "pwsafe_session_id") {
+		t.Error("should not set pwsafe_session_id cookie on failed login")
 	}
 }
 
 func TestLogin_WrongMethod(t *testing.T) {
-	h := newSecuredAuthHandler(t)
+	h := newEnabledAuthHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/login", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
@@ -194,7 +194,7 @@ func TestLogin_WrongMethod(t *testing.T) {
 }
 
 func TestLogin_MalformedJSON(t *testing.T) {
-	h := newSecuredAuthHandler(t)
+	h := newEnabledAuthHandler(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader([]byte("{bad")))
 	req.RemoteAddr = "127.0.0.1:12345"
 	w := httptest.NewRecorder()
@@ -205,7 +205,7 @@ func TestLogin_MalformedJSON(t *testing.T) {
 }
 
 func TestLogout_ClearsCookie(t *testing.T) {
-	h := newSecuredAuthHandler(t)
+	h := newEnabledAuthHandler(t)
 
 	// Login first
 	body, _ := json.Marshal(map[string]string{"password": "testpass"})
@@ -221,7 +221,7 @@ func TestLogout_ClearsCookie(t *testing.T) {
 	// Extract session cookie
 	var sessionCookie *http.Cookie
 	for _, c := range w.Result().Cookies() {
-		if c.Name == "pwsafe_session" {
+		if c.Name == "pwsafe_session_id" {
 			sessionCookie = c
 			break
 		}
@@ -244,12 +244,12 @@ func TestLogout_ClearsCookie(t *testing.T) {
 	cookies := w2.Result().Cookies()
 	found := false
 	for _, c := range cookies {
-		if c.Name == "pwsafe_session" && c.MaxAge < 0 {
+		if c.Name == "pwsafe_session_id" && c.MaxAge < 0 {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Error("expected Set-Cookie with pwsafe_session and negative MaxAge on logout")
+		t.Error("expected Set-Cookie with pwsafe_session_id and negative MaxAge on logout")
 	}
 }

@@ -2,7 +2,7 @@
 
 A web service for [Password Safe](https://pwsafe.org/) that provides browser-based, read-only access to your .psafe3 files, no client app required.
 
-> ⚠️ **Security Notice**: This service has optional service-level authentication. If exposing this service to the internet, it is strongly recommended to enable authentication before doing so. Use of HTTPS is strongly recommended regardless if running in secured or unsecured mode.
+> ⚠️ **Security Notice**: This service has optional service-level authentication. If exposing this service to the internet, it is strongly recommended to enable authentication before doing so. Use of HTTPS is strongly recommended regardless of auth mode.
 
 ## For Users
 
@@ -20,7 +20,7 @@ I typically manage my password safes using the free Windows client, but sometime
 
 ### Is there service-level authentication?
 
-Yes. On first run, you choose between unsecured mode or secured mode. See the **[User Guide](docs/user.md)** for details.
+Yes. On first run, you choose between disabled or enabled auth mode. See the **[User Guide](docs/user.md)** for details.
 
 ### Why no multi-user support?
 

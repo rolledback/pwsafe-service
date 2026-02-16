@@ -40,14 +40,14 @@ func TestIsOAuthCallback_EmptyPath(t *testing.T) {
 	}
 }
 
-// --- RequireToken tests ---
+// --- RequireCsrfToken tests ---
 
-func TestRequireToken_ValidToken(t *testing.T) {
-	handler := RequireToken("test-token", func(w http.ResponseWriter, r *http.Request) {
+func TestRequireCsrfToken_ValidToken(t *testing.T) {
+	handler := RequireCsrfToken("test-csrf-token", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	req := httptest.NewRequest("GET", "/api/safes", nil)
-	req.Header.Set("X-PWSAFE-Token", "test-token")
+	req.Header.Set("X-PWSAFE-CSRF-Token", "test-csrf-token")
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 	if rec.Code != http.StatusOK {
@@ -55,8 +55,8 @@ func TestRequireToken_ValidToken(t *testing.T) {
 	}
 }
 
-func TestRequireToken_MissingToken(t *testing.T) {
-	handler := RequireToken("test-token", func(w http.ResponseWriter, r *http.Request) {
+func TestRequireCsrfToken_MissingToken(t *testing.T) {
+	handler := RequireCsrfToken("test-csrf-token", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	req := httptest.NewRequest("GET", "/api/safes", nil)
@@ -67,12 +67,12 @@ func TestRequireToken_MissingToken(t *testing.T) {
 	}
 }
 
-func TestRequireToken_WrongToken(t *testing.T) {
-	handler := RequireToken("test-token", func(w http.ResponseWriter, r *http.Request) {
+func TestRequireCsrfToken_WrongToken(t *testing.T) {
+	handler := RequireCsrfToken("test-csrf-token", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	req := httptest.NewRequest("GET", "/api/safes", nil)
-	req.Header.Set("X-PWSAFE-Token", "wrong-token")
+	req.Header.Set("X-PWSAFE-CSRF-Token", "wrong-csrf-token")
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 	if rec.Code != http.StatusForbidden {
@@ -80,14 +80,14 @@ func TestRequireToken_WrongToken(t *testing.T) {
 	}
 }
 
-func TestRequireToken_OptionsSkipped(t *testing.T) {
+func TestRequireCsrfToken_OptionsSkipped(t *testing.T) {
 	called := false
-	handler := RequireToken("test-token", func(w http.ResponseWriter, r *http.Request) {
+	handler := RequireCsrfToken("test-csrf-token", func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	})
 	req := httptest.NewRequest("OPTIONS", "/api/safes", nil)
-	req.Header.Set("X-PWSAFE-Token", "wrong-token")
+	req.Header.Set("X-PWSAFE-CSRF-Token", "wrong-csrf-token")
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 	if !called {
@@ -98,14 +98,14 @@ func TestRequireToken_OptionsSkipped(t *testing.T) {
 	}
 }
 
-func TestRequireToken_CallbackSkipped(t *testing.T) {
+func TestRequireCsrfToken_CallbackSkipped(t *testing.T) {
 	called := false
-	handler := RequireToken("test-token", func(w http.ResponseWriter, r *http.Request) {
+	handler := RequireCsrfToken("test-csrf-token", func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	})
 	req := httptest.NewRequest("GET", "/api/providers/mock/auth/callback", nil)
-	req.Header.Set("X-PWSAFE-Token", "wrong-token")
+	req.Header.Set("X-PWSAFE-CSRF-Token", "wrong-csrf-token")
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 	if !called {
@@ -299,9 +299,9 @@ func TestRequireAuth_Unset_Returns503(t *testing.T) {
 	}
 }
 
-func TestRequireAuth_Unsecured_Passthrough(t *testing.T) {
+func TestRequireAuth_Disabled_Passthrough(t *testing.T) {
 	svc := newTestAuthService(t)
-	svc.Setup("unsecured", "")
+	svc.Setup("disabled", "")
 	called := false
 	handler := RequireAuth(svc, func(w http.ResponseWriter, r *http.Request) {
 		called = true
@@ -319,9 +319,9 @@ func TestRequireAuth_Unsecured_Passthrough(t *testing.T) {
 	}
 }
 
-func TestRequireAuth_Secured_ValidSession(t *testing.T) {
+func TestRequireAuth_Enabled_ValidSession(t *testing.T) {
 	svc := newTestAuthService(t)
-	svc.Setup("secured", "pass")
+	svc.Setup("enabled", "pass")
 	sessionID, err := svc.Login("pass", "127.0.0.1")
 	if err != nil {
 		t.Fatalf("Login failed: %v", err)
@@ -333,7 +333,7 @@ func TestRequireAuth_Secured_ValidSession(t *testing.T) {
 	})
 	req := httptest.NewRequest("GET", "/api/safes", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
-	req.AddCookie(&http.Cookie{Name: "pwsafe_session", Value: sessionID})
+	req.AddCookie(&http.Cookie{Name: "pwsafe_session_id", Value: sessionID})
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 	if !called {
@@ -344,9 +344,9 @@ func TestRequireAuth_Secured_ValidSession(t *testing.T) {
 	}
 }
 
-func TestRequireAuth_Secured_NoSession(t *testing.T) {
+func TestRequireAuth_Enabled_NoSession(t *testing.T) {
 	svc := newTestAuthService(t)
-	svc.Setup("secured", "pass")
+	svc.Setup("enabled", "pass")
 	handler := RequireAuth(svc, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -359,13 +359,13 @@ func TestRequireAuth_Secured_NoSession(t *testing.T) {
 	}
 }
 
-func TestRequireAuth_Secured_ExpiredSession(t *testing.T) {
+func TestRequireAuth_Enabled_ExpiredSession(t *testing.T) {
 	dataDir := t.TempDir()
 	configDir := t.TempDir()
 	os.WriteFile(filepath.Join(configDir, "settings.json"), []byte("{}"), 0644)
 	settings := &config.Settings{Auth: &config.AuthConfig{SessionTimeout: "50ms"}}
 	svc := auth.NewAuthService(dataDir, configDir, settings)
-	svc.Setup("secured", "pass")
+	svc.Setup("enabled", "pass")
 	sessionID, err := svc.Login("pass", "127.0.0.1")
 	if err != nil {
 		t.Fatalf("Login failed: %v", err)
@@ -378,7 +378,7 @@ func TestRequireAuth_Secured_ExpiredSession(t *testing.T) {
 	})
 	req := httptest.NewRequest("GET", "/api/safes", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
-	req.AddCookie(&http.Cookie{Name: "pwsafe_session", Value: sessionID})
+	req.AddCookie(&http.Cookie{Name: "pwsafe_session_id", Value: sessionID})
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 	if rec.Code != http.StatusUnauthorized {
@@ -386,30 +386,9 @@ func TestRequireAuth_Secured_ExpiredSession(t *testing.T) {
 	}
 }
 
-func TestRequireAuth_BannedIP(t *testing.T) {
-	svc := newTestAuthService(t)
-	svc.Setup("unsecured", "")
-
-	ip := "10.0.0.99"
-	for i := 0; i < 5; i++ {
-		svc.RecordRateLimitHit(ip)
-	}
-
-	handler := RequireAuth(svc, func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	req := httptest.NewRequest("GET", "/api/safes", nil)
-	req.RemoteAddr = ip + ":12345"
-	rec := httptest.NewRecorder()
-	handler(rec, req)
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("expected 403, got %d", rec.Code)
-	}
-}
-
 func TestRequireAuth_OPTIONS_Bypass(t *testing.T) {
 	svc := newTestAuthService(t)
-	svc.Setup("secured", "pass")
+	svc.Setup("enabled", "pass")
 	handler := RequireAuth(svc, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})

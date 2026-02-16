@@ -62,14 +62,14 @@ describeDualMode("Path Traversal Protection", {}, (getApi, getServer) => {
 
   it("/web/ path traversal does not leak file contents", async () => {
     const api = getApi();
-    const resp = await api.raw("GET", "/web/..%2F..%2Fbackend/go.mod", { token: null });
+    const resp = await api.raw("GET", "/web/..%2F..%2Fbackend/go.mod", { csrfToken: null });
     const body = await resp.text();
     expect(body).not.toContain("module github.com");
   });
 
   it("/web/ nonexistent path serves SPA fallback", async () => {
     const api = getApi();
-    const resp = await api.raw("GET", "/web/nonexistent-page", { token: null });
+    const resp = await api.raw("GET", "/web/nonexistent-page", { csrfToken: null });
     expect(resp.status).toBe(200);
     const body = await resp.text();
     expect(body).toContain("</html>");
@@ -80,7 +80,7 @@ describeDualMode("Path Traversal Protection", {}, (getApi, getServer) => {
   for (const pattern of traversalPatterns) {
     it(`/web/ traversal pattern "${pattern}" does not leak files`, async () => {
       const api = getApi();
-      const resp = await api.raw("GET", `/web/${pattern}${pattern}backend/go.mod`, { token: null });
+      const resp = await api.raw("GET", `/web/${pattern}${pattern}backend/go.mod`, { csrfToken: null });
       const body = await resp.text();
       expect(body).not.toContain("module github.com");
     });

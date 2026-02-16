@@ -28,6 +28,6 @@ npm test
 Each test file starts its own server instance on an OS-assigned port with isolated temp directories. Tests run in parallel by default (vitest file-level parallelism).
 
 - `src/api/user-flows/` — Tests that replicate frontend user interactions via API calls
-- `src/api/security/` — Tests that verify security controls (token auth, path traversal, CORS, headers, rate limiting, etc.)
+- `src/api/security/` — Tests that verify security controls (CSRF token auth, path traversal, CORS, headers, rate limiting, etc.)
 - `src/browser/` — Reserved for future Playwright browser tests
 - `src/helpers/` — Server lifecycle management, typed API client, fixture helpers

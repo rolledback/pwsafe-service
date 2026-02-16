@@ -9,7 +9,7 @@ describe("Rate Limiting", () => {
   beforeAll(async () => {
     server = new ServerInstance();
     await server.start();
-    api = new ApiClient(server.baseUrl, server.apiToken);
+    api = new ApiClient(server.baseUrl, server.csrfToken);
     // Wait for strict rate limiter to refill after auth setup call during start
     await new Promise((r) => setTimeout(r, 5500));
   });
@@ -42,6 +42,43 @@ describe("Rate Limiting", () => {
 
       // At least one subsequent request should be rate limited
       expect(statuses.slice(2)).toContain(429);
+
+      // Majority of post-burst requests should be blocked
+      const blocked = statuses.slice(2).filter((s) => s === 429).length;
+      expect(blocked).toBeGreaterThanOrEqual(2);
+    },
+    { timeout: 15000 },
+  );
+});
+
+describe("Web Rate Limiting", () => {
+  let server: ServerInstance;
+
+  beforeAll(async () => {
+    server = new ServerInstance();
+    await server.start();
+  });
+
+  afterAll(async () => {
+    await server.stop();
+  });
+
+  it(
+    "/web/ rate limits after burst allowance",
+    async () => {
+      // Default web tier: 50 req/s, burst 50. Fire 60 parallel requests to exhaust burst.
+      const responses = await Promise.all(Array.from({ length: 60 }, () => fetch(`${server.baseUrl}/web/`)));
+      const statuses = responses.map((r) => r.status);
+
+      // Early requests should succeed
+      expect(statuses[0]).toBe(200);
+
+      // At least one request should be rate limited
+      expect(statuses).toContain(429);
+
+      // Multiple post-burst requests should be blocked
+      const blocked = statuses.filter((s) => s === 429).length;
+      expect(blocked).toBeGreaterThanOrEqual(3);
     },
     { timeout: 15000 },
   );

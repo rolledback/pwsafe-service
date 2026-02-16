@@ -8,11 +8,11 @@ function SetupPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const handleUnsecured = async () => {
+  const handleSkipAuth = async () => {
     setSubmitting(true);
     setError(null);
     try {
-      await api.authSetup("unsecured");
+      await api.authSetup("disabled");
       window.location.href = "/web/";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Setup failed");
@@ -21,7 +21,7 @@ function SetupPage() {
     }
   };
 
-  const handleSecuredSubmit = async (e: FormEvent) => {
+  const handleEnableAuth = async (e: FormEvent) => {
     e.preventDefault();
     if (password !== confirmPassword) {
       setError("Passwords do not match");
@@ -34,7 +34,7 @@ function SetupPage() {
     setSubmitting(true);
     setError(null);
     try {
-      await api.authSetup("secured", password);
+      await api.authSetup("enabled", password);
       window.location.href = "/web/";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Setup failed");
@@ -48,7 +48,7 @@ function SetupPage() {
       <div className="unlock-card">
         <div className="safe-icon">🔐</div>
         <div className="safe-title">Welcome to pwsafe-service</div>
-        <div className="safe-subtitle">Choose how you'd like to secure this service</div>
+        <div className="safe-subtitle">Choose how you'd like to set up authentication</div>
 
         {error && <div className="error-message">{error}</div>}
 
@@ -57,12 +57,12 @@ function SetupPage() {
             <button className="primary" onClick={() => setMode("password")} disabled={submitting}>
               Set Up Password
             </button>
-            <button className="secondary" onClick={handleUnsecured} disabled={submitting}>
-              {submitting ? "Setting up..." : "Run Unsecured"}
+            <button className="secondary" onClick={handleSkipAuth} disabled={submitting}>
+              {submitting ? "Setting up..." : "Skip Authentication"}
             </button>
           </div>
         ) : (
-          <form onSubmit={handleSecuredSubmit}>
+          <form onSubmit={handleEnableAuth}>
             <div className="form-group">
               <label htmlFor="password">Password</label>
               <input

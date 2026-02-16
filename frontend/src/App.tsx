@@ -48,7 +48,7 @@ function AppContent() {
     );
   }
 
-  if (auth.mode === "secured" && !auth.authenticated) {
+  if (auth.mode === "enabled" && !auth.authenticated) {
     return (
       <div className="app-wrapper">
         <div className="app-content">

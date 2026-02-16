@@ -7,7 +7,7 @@ export function describeDualMode(
   extraOptions: Partial<ServerOptions>,
   fn: (getApi: () => ApiClient, getServer: () => ServerInstance) => void,
 ) {
-  for (const mode of ["unsecured", "secured"] as const) {
+  for (const mode of ["disabled", "enabled"] as const) {
     describe(`${name} (${mode})`, () => {
       let server: ServerInstance;
       let api: ApiClient;
@@ -15,8 +15,8 @@ export function describeDualMode(
       beforeAll(async () => {
         server = new ServerInstance({ ...extraOptions, authMode: mode, password: "testpass" });
         await server.start();
-        api = new ApiClient(server.baseUrl, server.apiToken);
-        if (mode === "secured") await api.login("testpass");
+        api = new ApiClient(server.baseUrl, server.csrfToken);
+        if (mode === "enabled") await api.login("testpass");
       });
 
       afterAll(async () => {

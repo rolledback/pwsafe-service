@@ -13,12 +13,12 @@ describe("Auth session expiry", { timeout: 30_000 }, () => {
 
   beforeAll(async () => {
     server = new ServerInstance({
-      authMode: "secured",
+      authMode: "enabled",
       password: "testpass",
       sessionTimeout: "2s",
     });
     await server.start();
-    api = new ApiClient(server.baseUrl, server.apiToken);
+    api = new ApiClient(server.baseUrl, server.csrfToken);
   });
 
   afterAll(async () => {

@@ -1,11 +1,11 @@
 const API_BASE_URL = "/api";
 
-function getApiToken(): string {
-  return (window as any).__PWSAFE_TOKEN || "";
+function getCsrfToken(): string {
+  return (window as any).__PWSAFE_CSRF_TOKEN || "";
 }
 
 function apiHeaders(extra?: Record<string, string>): Record<string, string> {
-  return { "X-PWSAFE-Token": getApiToken(), ...extra };
+  return { "X-PWSAFE-CSRF-Token": getCsrfToken(), ...extra };
 }
 
 async function apiFetch(url: string, init?: RequestInit): Promise<Response> {

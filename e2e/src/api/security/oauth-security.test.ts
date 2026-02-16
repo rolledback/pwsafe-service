@@ -9,7 +9,7 @@ describe("OAuth Security", () => {
   beforeAll(async () => {
     server = new ServerInstance();
     await server.start();
-    api = new ApiClient(server.baseUrl, server.apiToken);
+    api = new ApiClient(server.baseUrl, server.csrfToken);
   });
 
   afterAll(async () => {
@@ -17,12 +17,12 @@ describe("OAuth Security", () => {
   });
 
   it("OAuth callback is exempt from token requirement (returns 302, not 403)", async () => {
-    const resp = await api.raw("GET", "/api/providers/mock/auth/callback?code=test", { token: null });
+    const resp = await api.raw("GET", "/api/providers/mock/auth/callback?code=test", { csrfToken: null });
     expect(resp.status).toBe(302);
   });
 
   it("OAuth callback redirects to /web/add/{provider}", async () => {
-    const resp = await api.raw("GET", "/api/providers/mock/auth/callback?code=test", { token: null });
+    const resp = await api.raw("GET", "/api/providers/mock/auth/callback?code=test", { csrfToken: null });
     expect(resp.status).toBe(302);
     const location = resp.headers.get("location");
     expect(location).toContain("/web/add/mock");

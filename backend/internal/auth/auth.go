@@ -19,14 +19,12 @@ import (
 )
 
 const (
-	maxSessions           = 100
-	maxAbsoluteLifetime   = 24 * time.Hour
-	defaultSessionTimeout = 3 * time.Minute
-	banThreshold          = 5
-	banWindow             = 15 * time.Minute
-	banDuration           = 1 * time.Hour
-	sessionCookieName     = "pwsafe_session"
-	passwordHashFile      = ".password_hash"
+	defaultMaxSessions         = 4
+	defaultMaxAbsoluteLifetime = 30 * time.Minute
+	defaultSessionTimeout      = 3 * time.Minute
+	defaultBcryptCost          = 10 // bcrypt.DefaultCost
+	sessionCookieName          = "pwsafe_session_id"
+	passwordHashFile           = ".password_hash"
 )
 
 // Session represents an active user session
@@ -36,47 +34,79 @@ type Session struct {
 	IP        string
 }
 
-type rateLimitHit struct {
-	timestamps []time.Time
-}
-
-type ipBan struct {
-	expiresAt    time.Time
-	lastLogTime  time.Time
-}
-
-// AuthService manages authentication, sessions, and IP banning
+// AuthService manages authentication and sessions
 type AuthService struct {
-	mu             sync.Mutex
-	sessions       map[string]*Session
-	ipBans         map[string]*ipBan
-	rateLimitHits  map[string]*rateLimitHit
-	sessionTimeout time.Duration
-	dataDir        string
-	configDir      string
-	settings       *config.Settings
+	mu                  sync.Mutex
+	sessions            map[string]*Session
+	sessionTimeout      time.Duration
+	bcryptCost          int
+	maxSessions         int
+	maxAbsoluteLifetime time.Duration
+	dataDir             string
+	configDir           string
+	settings            *config.Settings
 }
 
 // NewAuthService creates a new AuthService
 func NewAuthService(dataDir, configDir string, settings *config.Settings) *AuthService {
 	timeout := defaultSessionTimeout
-	if settings.Auth != nil && settings.Auth.SessionTimeout != "" {
-		parsed, err := time.ParseDuration(settings.Auth.SessionTimeout)
-		if err == nil {
-			timeout = parsed
-		} else {
-			log.Printf("Warning: invalid sessionTimeout %q, using default %s", settings.Auth.SessionTimeout, defaultSessionTimeout)
+	cost := defaultBcryptCost
+	maxSess := defaultMaxSessions
+	maxLifetime := defaultMaxAbsoluteLifetime
+
+	if settings.Auth != nil {
+		if settings.Auth.SessionTimeout != "" {
+			parsed, err := time.ParseDuration(settings.Auth.SessionTimeout)
+			if err == nil {
+				timeout = parsed
+			} else {
+				log.Printf("Warning: invalid sessionTimeout %q, using default %s", settings.Auth.SessionTimeout, defaultSessionTimeout)
+			}
+		}
+
+		if settings.Auth.BcryptCost != 0 {
+			if settings.Auth.BcryptCost >= 4 && settings.Auth.BcryptCost <= 31 {
+				cost = settings.Auth.BcryptCost
+			} else {
+				log.Printf("Warning: invalid bcryptCost %d (must be 4-31), using default %d", settings.Auth.BcryptCost, defaultBcryptCost)
+			}
+		}
+
+		if settings.Auth.MaxSessions != 0 {
+			if settings.Auth.MaxSessions >= 1 && settings.Auth.MaxSessions <= 10000 {
+				maxSess = settings.Auth.MaxSessions
+			} else {
+				log.Printf("Warning: invalid maxSessions %d (must be 1-10000), using default %d", settings.Auth.MaxSessions, defaultMaxSessions)
+			}
+		}
+
+		if settings.Auth.MaxSessionLifetime != "" {
+			parsed, err := time.ParseDuration(settings.Auth.MaxSessionLifetime)
+			if err == nil {
+				if parsed >= 1*time.Minute {
+					maxLifetime = parsed
+				} else {
+					log.Printf("Warning: maxSessionLifetime %s is below minimum 1m, using default %s", settings.Auth.MaxSessionLifetime, defaultMaxAbsoluteLifetime)
+				}
+			} else {
+				log.Printf("Warning: invalid maxSessionLifetime %q, using default %s", settings.Auth.MaxSessionLifetime, defaultMaxAbsoluteLifetime)
+			}
+		}
+
+		if timeout > maxLifetime {
+			log.Printf("Warning: sessionTimeout %s exceeds maxSessionLifetime %s, this is likely a misconfiguration", timeout, maxLifetime)
 		}
 	}
 
 	return &AuthService{
-		sessions:       make(map[string]*Session),
-		ipBans:         make(map[string]*ipBan),
-		rateLimitHits:  make(map[string]*rateLimitHit),
-		sessionTimeout: timeout,
-		dataDir:        dataDir,
-		configDir:      configDir,
-		settings:       settings,
+		sessions:            make(map[string]*Session),
+		sessionTimeout:      timeout,
+		bcryptCost:          cost,
+		maxSessions:         maxSess,
+		maxAbsoluteLifetime: maxLifetime,
+		dataDir:             dataDir,
+		configDir:           configDir,
+		settings:            settings,
 	}
 }
 
@@ -99,15 +129,15 @@ func (s *AuthService) Setup(mode string, password string) error {
 		return fmt.Errorf("auth mode already configured")
 	}
 
-	if mode != "unsecured" && mode != "secured" {
+	if mode != "disabled" && mode != "enabled" {
 		return fmt.Errorf("invalid mode: %s", mode)
 	}
 
-	if mode == "secured" {
+	if mode == "enabled" {
 		if password == "" {
-			return fmt.Errorf("password required for secured mode")
+			return fmt.Errorf("password required when auth mode is enabled")
 		}
-		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		hash, err := bcrypt.GenerateFromPassword([]byte(password), s.bcryptCost)
 		if err != nil {
 			return fmt.Errorf("failed to hash password: %w", err)
 		}
@@ -126,7 +156,7 @@ func (s *AuthService) Setup(mode string, password string) error {
 		// Rollback mode on save failure
 		s.settings.Auth.Mode = ""
 		// Clean up hash file if it was written
-		if mode == "secured" {
+		if mode == "enabled" {
 			os.Remove(filepath.Join(s.dataDir, passwordHashFile))
 		}
 		return fmt.Errorf("failed to save settings: %w", err)
@@ -158,7 +188,7 @@ func (s *AuthService) Login(password string, ip string) (string, error) {
 	}
 
 	// Enforce max session cap
-	if len(s.sessions) >= maxSessions {
+	if len(s.sessions) >= s.maxSessions {
 		// Evict oldest session
 		var oldestID string
 		var oldestTime time.Time
@@ -174,11 +204,11 @@ func (s *AuthService) Login(password string, ip string) (string, error) {
 	}
 
 	// Generate session ID
-	tokenBytes := make([]byte, 16) // 128 bits
-	if _, err := io.ReadFull(rand.Reader, tokenBytes); err != nil {
+	sessionIDBytes := make([]byte, 16) // 128 bits
+	if _, err := io.ReadFull(rand.Reader, sessionIDBytes); err != nil {
 		return "", fmt.Errorf("failed to generate session ID: %w", err)
 	}
-	sessionID := hex.EncodeToString(tokenBytes)
+	sessionID := hex.EncodeToString(sessionIDBytes)
 
 	now := time.Now()
 	s.sessions[sessionID] = &Session{
@@ -201,7 +231,7 @@ func (s *AuthService) ValidateSession(sessionID string, ip string) bool {
 	}
 
 	now := time.Now()
-	if now.After(sess.ExpiresAt) || now.Sub(sess.CreatedAt) > maxAbsoluteLifetime {
+	if now.After(sess.ExpiresAt) || now.Sub(sess.CreatedAt) > s.maxAbsoluteLifetime {
 		delete(s.sessions, sessionID)
 		return false
 	}
@@ -227,7 +257,7 @@ func (s *AuthService) IsAuthenticated(sessionID string, ip string) bool {
 	}
 
 	now := time.Now()
-	if now.After(sess.ExpiresAt) || now.Sub(sess.CreatedAt) > maxAbsoluteLifetime {
+	if now.After(sess.ExpiresAt) || now.Sub(sess.CreatedAt) > s.maxAbsoluteLifetime {
 		delete(s.sessions, sessionID)
 		return false
 	}
@@ -247,62 +277,6 @@ func (s *AuthService) Logout(sessionID string) {
 	delete(s.sessions, sessionID)
 }
 
-// IsIPBanned checks if an IP is currently banned
-func (s *AuthService) IsIPBanned(ip string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	ban, ok := s.ipBans[ip]
-	if !ok {
-		return false
-	}
-	now := time.Now()
-	if now.After(ban.expiresAt) {
-		delete(s.ipBans, ip)
-		return false
-	}
-	
-	// Log throttling: only log once per minute
-	if now.Sub(ban.lastLogTime) >= 1*time.Minute {
-		log.Printf("IP banned: %s (blocked request)", ip)
-		ban.lastLogTime = now
-	}
-	return true
-}
-
-// RecordRateLimitHit records a rate limit hit for an IP and bans after threshold
-func (s *AuthService) RecordRateLimitHit(ip string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	hits, ok := s.rateLimitHits[ip]
-	if !ok {
-		hits = &rateLimitHit{}
-		s.rateLimitHits[ip] = hits
-	}
-
-	now := time.Now()
-	cutoff := now.Add(-banWindow)
-
-	// Prune old hits
-	fresh := make([]time.Time, 0, len(hits.timestamps))
-	for _, t := range hits.timestamps {
-		if t.After(cutoff) {
-			fresh = append(fresh, t)
-		}
-	}
-	hits.timestamps = append(fresh, now)
-
-	if len(hits.timestamps) >= banThreshold {
-		s.ipBans[ip] = &ipBan{
-			expiresAt:   now.Add(banDuration),
-			lastLogTime: now,
-		}
-		log.Printf("IP banned: %s (exceeded rate limit threshold)", ip)
-		delete(s.rateLimitHits, ip)
-	}
-}
-
 // CleanupExpiredSessions removes expired sessions periodically
 func (s *AuthService) CleanupExpiredSessions(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Minute)
@@ -316,29 +290,8 @@ func (s *AuthService) CleanupExpiredSessions(ctx context.Context) {
 			s.mu.Lock()
 			now := time.Now()
 			for id, sess := range s.sessions {
-				if now.After(sess.ExpiresAt) || now.Sub(sess.CreatedAt) > maxAbsoluteLifetime {
+				if now.After(sess.ExpiresAt) || now.Sub(sess.CreatedAt) > s.maxAbsoluteLifetime {
 					delete(s.sessions, id)
-				}
-			}
-			// Clean expired bans
-			for ip, ban := range s.ipBans {
-				if now.After(ban.expiresAt) {
-					delete(s.ipBans, ip)
-				}
-			}
-			// Clean old rate limit hits
-			cutoff := now.Add(-banWindow)
-			for ip, hits := range s.rateLimitHits {
-				fresh := hits.timestamps[:0]
-				for _, t := range hits.timestamps {
-					if t.After(cutoff) {
-						fresh = append(fresh, t)
-					}
-				}
-				if len(fresh) == 0 {
-					delete(s.rateLimitHits, ip)
-				} else {
-					hits.timestamps = fresh
 				}
 			}
 			s.mu.Unlock()
@@ -397,4 +350,19 @@ func (s *AuthService) SessionCount() int {
 // GetSessionTimeout returns the session timeout (for testing)
 func (s *AuthService) GetSessionTimeout() time.Duration {
 	return s.sessionTimeout
+}
+
+// GetBcryptCost returns the bcrypt cost (for testing)
+func (s *AuthService) GetBcryptCost() int {
+	return s.bcryptCost
+}
+
+// GetMaxSessions returns the max sessions (for testing)
+func (s *AuthService) GetMaxSessions() int {
+	return s.maxSessions
+}
+
+// GetMaxAbsoluteLifetime returns the max absolute session lifetime (for testing)
+func (s *AuthService) GetMaxAbsoluteLifetime() time.Duration {
+	return s.maxAbsoluteLifetime
 }

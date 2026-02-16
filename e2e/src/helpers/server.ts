@@ -9,12 +9,22 @@ const TESTDATA_DIR = join(BACKEND_DIR, "testdata");
 const FRONTEND_DIST = join(PROJECT_ROOT, "frontend", "dist");
 const BINARY_NAME = process.platform === "win32" ? "pwsafe-service.exe" : "pwsafe-service";
 
+export interface RateLimitTierOptions {
+  rate: number;
+  burst: number;
+}
+
 export interface ServerOptions {
   syncInterval?: string; // e.g., "3s", "15m"
-  authMode?: "unsecured" | "secured";
+  authMode?: "disabled" | "enabled";
   password?: string;
   sessionTimeout?: string; // e.g., "2s", "3m"
   skipAuthSetup?: boolean; // skip auto-setup (for auth-setup tests)
+  rateLimiter?: {
+    standard?: RateLimitTierOptions;
+    strict?: RateLimitTierOptions;
+    web?: RateLimitTierOptions;
+  };
 }
 
 export class ServerInstance {
@@ -23,7 +33,7 @@ export class ServerInstance {
   private options: ServerOptions;
 
   public baseUrl: string = "";
-  public apiToken: string = "";
+  public csrfToken: string = "";
   public port: number = 0;
 
   constructor(options: ServerOptions = {}) {
@@ -67,6 +77,9 @@ export class ServerInstance {
     if (this.options.sessionTimeout) {
       settings.auth = { sessionTimeout: this.options.sessionTimeout };
     }
+    if (this.options.rateLimiter) {
+      settings.rateLimiter = this.options.rateLimiter;
+    }
     await writeFile(join(configDir, "settings.json"), JSON.stringify(settings, null, 2));
 
     this.process = spawn(binaryPath, [], {
@@ -84,19 +97,19 @@ export class ServerInstance {
     // Wait for server to be ready
     await this.waitForReady();
 
-    // Extract API token from served HTML
-    await this.extractToken();
+    // Extract CSRF token from served HTML
+    await this.extractCsrfToken();
 
-    // Setup auth mode (default to "unsecured" so existing tests keep working)
+    // Setup auth mode (default to "disabled" so existing tests keep working)
     if (!this.options.skipAuthSetup) {
-      const mode = this.options.authMode ?? "unsecured";
+      const mode = this.options.authMode ?? "disabled";
       const setupBody: Record<string, string> = { mode };
-      if (mode === "secured" && this.options.password) {
+      if (mode === "enabled" && this.options.password) {
         setupBody.password = this.options.password;
       }
       const setupResp = await fetch(`${this.baseUrl}/api/auth/setup`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-PWSAFE-Token": this.apiToken },
+        headers: { "Content-Type": "application/json", "X-PWSAFE-CSRF-Token": this.csrfToken },
         body: JSON.stringify(setupBody),
       });
       if (!setupResp.ok) throw new Error(`Auth setup failed: ${await setupResp.text()}`);
@@ -161,13 +174,13 @@ export class ServerInstance {
     throw new Error(`Server failed to become ready within ${timeoutMs}ms at ${this.baseUrl}`);
   }
 
-  private async extractToken(): Promise<void> {
+  private async extractCsrfToken(): Promise<void> {
     const resp = await fetch(`${this.baseUrl}/web/`);
     const html = await resp.text();
-    const match = html.match(/window\.__PWSAFE_TOKEN="([a-f0-9]+)"/);
+    const match = html.match(/window\.__PWSAFE_CSRF_TOKEN="([a-f0-9]+)"/);
     if (!match) {
-      throw new Error("Failed to extract API token from served HTML");
+      throw new Error("Failed to extract CSRF token from served HTML");
     }
-    this.apiToken = match[1];
+    this.csrfToken = match[1];
   }
 }

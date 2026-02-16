@@ -1,6 +1,6 @@
 # Providers
 
-Providers allow pwsafe-service to sync password safes from remote sources (e.g. cloud storage). Synced password safes are resynced on a routine basis. Changes made to synced safes will are overridden during resync. This guide covers how to configure supported providers.
+Providers allow pwsafe-service to sync password safes from remote sources (e.g. cloud storage). Synced password safes are resynced on a routine basis. Changes made to synced safes are overridden during resync. This guide covers how to configure supported providers.
 
 ## Getting Started
 

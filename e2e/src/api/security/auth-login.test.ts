@@ -12,9 +12,9 @@ describe("Auth login and logout", () => {
   let api: ApiClient;
 
   beforeAll(async () => {
-    server = new ServerInstance({ authMode: "secured", password: "testpass" });
+    server = new ServerInstance({ authMode: "enabled", password: "testpass" });
     await server.start();
-    api = new ApiClient(server.baseUrl, server.apiToken);
+    api = new ApiClient(server.baseUrl, server.csrfToken);
   });
 
   afterAll(async () => {
@@ -29,7 +29,7 @@ describe("Auth login and logout", () => {
     expect(resp.status).toBe(200);
     const setCookie = resp.headers.get("set-cookie");
     expect(setCookie).toBeTruthy();
-    expect(setCookie).toContain("pwsafe_session=");
+    expect(setCookie).toContain("pwsafe_session_id=");
   });
 
   it("login with wrong password fails", async () => {
@@ -71,7 +71,7 @@ describe("Auth login and logout", () => {
     const resp = await api.raw("GET", "/api/auth/status");
     expect(resp.status).toBe(200);
     const body = await resp.json();
-    expect(body.mode).toBe("secured");
+    expect(body.mode).toBe("enabled");
     expect(body.authenticated).toBe(true);
   });
 
@@ -84,8 +84,8 @@ describe("Auth login and logout", () => {
     expect(firstSessionResp.status).toBe(200);
 
     // Create a second client that will hold the first session's cookie
-    const api2 = new ApiClient(server.baseUrl, server.apiToken);
-    (api2 as any).cookies["pwsafe_session"] = (api as any).cookies["pwsafe_session"];
+    const api2 = new ApiClient(server.baseUrl, server.csrfToken);
+    (api2 as any).cookies["pwsafe_session_id"] = (api as any).cookies["pwsafe_session_id"];
 
     // Login again with the main client (invalidates old session from same IP)
     await sleep(STRICT_RATE_WAIT);
@@ -98,15 +98,15 @@ describe("Auth login and logout", () => {
 
   it("logout without session cookie returns 401", async () => {
     // Create a fresh client with no cookies
-    const freshApi = new ApiClient(server.baseUrl, server.apiToken);
+    const freshApi = new ApiClient(server.baseUrl, server.csrfToken);
     const resp = await freshApi.raw("POST", "/api/auth/logout");
     expect(resp.status).toBe(401);
   });
 
   it("malformed session cookie returns 401 not 500", async () => {
     // Create a client and manually set a garbage cookie
-    const badApi = new ApiClient(server.baseUrl, server.apiToken);
-    (badApi as any).cookies["pwsafe_session"] = "not-valid-hex!!!garbage";
+    const badApi = new ApiClient(server.baseUrl, server.csrfToken);
+    (badApi as any).cookies["pwsafe_session_id"] = "not-valid-hex!!!garbage";
     const resp = await badApi.raw("GET", "/api/safes");
     expect(resp.status).toBe(401);
   });

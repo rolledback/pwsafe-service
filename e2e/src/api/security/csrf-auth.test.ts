@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { describeDualMode } from "../../helpers/dual-mode";
 
-describeDualMode("Token Authentication Enforcement", {}, (getApi) => {
+describeDualMode("CSRF Token Authentication", {}, (getApi) => {
   const getEndpoints = ["/api/safes", "/api/providers", "/api/providers/mock/status", "/api/providers/mock/files"];
 
   const mutatingEndpoints: Array<{ method: string; path: string }> = [
@@ -14,7 +14,7 @@ describeDualMode("Token Authentication Enforcement", {}, (getApi) => {
     for (const path of getEndpoints) {
       it(`GET ${path} → 403`, async () => {
         const api = getApi();
-        const resp = await api.raw("GET", path, { token: null });
+        const resp = await api.raw("GET", path, { csrfToken: null });
         expect(resp.status).toBe(403);
       });
     }
@@ -22,7 +22,7 @@ describeDualMode("Token Authentication Enforcement", {}, (getApi) => {
     for (const { method, path } of mutatingEndpoints) {
       it(`${method} ${path} → 403`, async () => {
         const api = getApi();
-        const resp = await api.raw(method, path, { token: null });
+        const resp = await api.raw(method, path, { csrfToken: null });
         expect(resp.status).toBe(403);
       });
     }
@@ -32,7 +32,7 @@ describeDualMode("Token Authentication Enforcement", {}, (getApi) => {
     for (const path of getEndpoints) {
       it(`GET ${path} → 403`, async () => {
         const api = getApi();
-        const resp = await api.raw("GET", path, { token: "badtoken" });
+        const resp = await api.raw("GET", path, { csrfToken: "badtoken" });
         expect(resp.status).toBe(403);
       });
     }
@@ -40,7 +40,7 @@ describeDualMode("Token Authentication Enforcement", {}, (getApi) => {
     for (const { method, path } of mutatingEndpoints) {
       it(`${method} ${path} → 403`, async () => {
         const api = getApi();
-        const resp = await api.raw(method, path, { token: "badtoken" });
+        const resp = await api.raw(method, path, { csrfToken: "badtoken" });
         expect(resp.status).toBe(403);
       });
     }

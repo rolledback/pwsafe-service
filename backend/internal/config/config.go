@@ -18,8 +18,24 @@ type Config struct {
 
 // AuthConfig holds authentication settings
 type AuthConfig struct {
-	Mode           string `json:"mode"`           // "unsecured", "secured", or "" (unset)
-	SessionTimeout string `json:"sessionTimeout"` // duration string, default "3m"
+	Mode               string `json:"mode"`               // "disabled", "enabled", or "" (unset)
+	SessionTimeout     string `json:"sessionTimeout"`     // duration string, default "3m"
+	BcryptCost         int    `json:"bcryptCost"`         // 4–31, default 10
+	MaxSessions        int    `json:"maxSessions"`        // 1–10000, default 4
+	MaxSessionLifetime string `json:"maxSessionLifetime"` // duration string, default "30m"
+}
+
+// RateLimitTierConfig holds rate and burst for a single rate limiter tier
+type RateLimitTierConfig struct {
+	Rate  float64 `json:"rate"`  // requests per second
+	Burst int     `json:"burst"` // burst capacity
+}
+
+// RateLimiterConfig holds rate limiter settings for standard, strict, and web tiers
+type RateLimiterConfig struct {
+	Standard *RateLimitTierConfig `json:"standard,omitempty"`
+	Strict   *RateLimitTierConfig `json:"strict,omitempty"`
+	Web      *RateLimitTierConfig `json:"web,omitempty"`
 }
 
 // Settings represents the parsed settings.json file
@@ -27,6 +43,7 @@ type Settings struct {
 	BaseURL      string                    `json:"baseUrl"`
 	SyncInterval string                    `json:"syncInterval"`
 	Auth         *AuthConfig               `json:"auth,omitempty"`
+	RateLimiter  *RateLimiterConfig        `json:"rateLimiter,omitempty"`
 	Providers    map[string]map[string]any `json:"providers"`
 }
 

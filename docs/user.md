@@ -2,23 +2,23 @@
 
 This guide covers how to deploy and use pwsafe-service to access your Password Safe files through a web browser.
 
-> ⚠️ **Security Notice**: This service has optional service-level authentication. If exposing this service to the internet, it is strongly recommended to enable authentication before doing so. Use of HTTPS is strongly recommended regardless if running in secured or unsecured mode.
+> ⚠️ **Security Notice**: This service has optional service-level authentication. If exposing this service to the internet, it is strongly recommended to enable authentication before doing so. Use of HTTPS is strongly recommended regardless of auth mode.
 
-## Security Modes
+## Auth Modes
 
-The first time you open the service in your browser, you'll be asked to choose a security mode.
+The first time you open the service in your browser, you'll be asked to choose an auth mode.
 
-### Unsecured Mode
+### Disabled
 
-No password is needed. Anyone on your network can access the service. This is best if you are only exposing the service on a trusted network.
+No password is needed. Anyone who can reach the service can access it. This is best if you are only exposing the service on a trusted network.
 
-### Secured Mode (alpha)
+### Enabled (alpha)
 
 You set a password during setup. You must enter it each time you access the service. Your session expires after a few minutes of inactivity, and you'll need to re-enter the password.
 
-### Changing Modes or Resetting Your Password
+### Changing Auth Mode or Resetting Your Password
 
-Remove the `auth` block from your `settings.json` and restart the service. You'll be prompted to choose a security mode again.
+Remove the `auth` block from your `settings.json` and restart the service. You'll be prompted to choose an auth mode again.
 
 ## What is pwsafe-service?
 
