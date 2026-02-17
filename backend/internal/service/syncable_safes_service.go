@@ -20,8 +20,9 @@ const defaultSyncInterval = 15 * time.Minute
 // SyncableSafesService orchestrates sync for ANY provider.
 // All sync logic lives here - providers only implement primitives.
 type SyncableSafesService struct {
-	dataDir  string
-	provider provider.SyncableSafesProvider
+	dataDir         string
+	maxSafeFileSize int64
+	provider        provider.SyncableSafesProvider
 
 	syncMutex      sync.RWMutex
 	nextSyncMutex  sync.RWMutex
@@ -38,18 +39,20 @@ func NewSyncableSafesService(
 	dataDir string,
 	p provider.SyncableSafesProvider,
 	syncInterval time.Duration,
+	maxSafeFileSize int64,
 ) *SyncableSafesService {
 	if syncInterval <= 0 {
 		syncInterval = defaultSyncInterval
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	svc := &SyncableSafesService{
-		dataDir:      dataDir,
-		provider:     p,
-		syncInterval: syncInterval,
-		nextSyncAt:   time.Now().Add(syncInterval),
-		ctx:          ctx,
-		cancel:       cancel,
+		dataDir:         dataDir,
+		maxSafeFileSize: maxSafeFileSize,
+		provider:        p,
+		syncInterval:    syncInterval,
+		nextSyncAt:      time.Now().Add(syncInterval),
+		ctx:             ctx,
+		cancel:          cancel,
 	}
 	go svc.periodicSync()
 	return svc
@@ -116,6 +119,7 @@ func (s *SyncableSafesService) ListFiles(ctx context.Context) ([]SelectedFile, e
 			ID:       rf.ID,
 			Name:     rf.Name,
 			Path:     rf.Path,
+			Size:     rf.Size,
 			Selected: savedSelections[rf.ID],
 		})
 	}
@@ -168,6 +172,13 @@ func (s *SyncableSafesService) Sync(ctx context.Context) ([]SyncResult, error) {
 
 	// Step 2: For each selected file, download from remote
 	for _, file := range selectedFiles {
+		// Skip oversized files
+		if file.Size > 0 && file.Size > s.maxSafeFileSize {
+			log.Printf("%s: skipping oversized file %q (%d bytes > %d max)", s.provider.ID(), file.Name, file.Size, s.maxSafeFileSize)
+			results = append(results, SyncResult{Name: file.Name, Success: false, Error: fmt.Sprintf("file exceeds maximum size (%d bytes)", s.maxSafeFileSize)})
+			continue
+		}
+
 		localPath, err := s.getLocalPath(file)
 		if err != nil {
 			log.Printf("%s: skipping file %q: %v", s.provider.ID(), file.Name, err)
@@ -325,12 +336,20 @@ func (s *SyncableSafesService) downloadToPath(ctx context.Context, fileID, local
 		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}
 
-	if _, err := io.Copy(file, result.Content); err != nil {
+	// Enforce size limit regardless of what the provider reported
+	limited := io.LimitReader(result.Content, s.maxSafeFileSize+1)
+	written, err := io.Copy(file, limited)
+	if err != nil {
 		file.Close()
 		os.Remove(tmpPath)
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
 	file.Close()
+
+	if written > s.maxSafeFileSize {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("downloaded file exceeds maximum size (%d bytes)", s.maxSafeFileSize)
+	}
 
 	// Atomic rename
 	if err := os.Rename(tmpPath, localPath); err != nil {

@@ -60,7 +60,7 @@ func TestProvider_GetAuthURL(t *testing.T) {
 	p := NewProvider("myid")
 	ctx := context.Background()
 
-	url, err := p.GetAuthURL(ctx)
+	url, err := p.GetAuthURL(ctx, "test-session")
 	if err != nil {
 		t.Fatalf("GetAuthURL failed: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestProvider_GetAuthURL_Error(t *testing.T) {
 	p.AuthError = fmt.Errorf("auth failed")
 	ctx := context.Background()
 
-	_, err := p.GetAuthURL(ctx)
+	_, err := p.GetAuthURL(ctx, "test-session")
 	if err == nil {
 		t.Error("Expected error from GetAuthURL")
 	}
@@ -86,7 +86,7 @@ func TestProvider_HandleCallback(t *testing.T) {
 	p.SetConnected(false)
 	ctx := context.Background()
 
-	err := p.HandleCallback(ctx, "auth-code", "")
+	err := p.HandleCallback(ctx, "auth-code", "", "test-session")
 	if err != nil {
 		t.Fatalf("HandleCallback failed: %v", err)
 	}

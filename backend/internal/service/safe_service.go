@@ -20,15 +20,17 @@ type SafeRef struct {
 }
 
 type SafeService struct {
-	dataDir    string
-	idCache    map[string]SafeRef // id → {provider, path}
-	cacheMutex sync.RWMutex
+	dataDir         string
+	maxSafeFileSize int64
+	idCache         map[string]SafeRef // id → {provider, path}
+	cacheMutex      sync.RWMutex
 }
 
-func NewSafeService(dataDir string) *SafeService {
+func NewSafeService(dataDir string, maxSafeFileSize int64) *SafeService {
 	return &SafeService{
-		dataDir: dataDir,
-		idCache: make(map[string]SafeRef),
+		dataDir:         dataDir,
+		maxSafeFileSize: maxSafeFileSize,
+		idCache:         make(map[string]SafeRef),
 	}
 }
 
@@ -131,6 +133,14 @@ func (s *SafeService) scanDirectory(dir, source string, recursive bool) ([]model
 				return nil
 			}
 
+			// Skip symlinks to prevent symlink path traversal
+			if d.Type()&os.ModeSymlink != 0 {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+
 			if d.IsDir() {
 				return nil
 			}
@@ -173,6 +183,11 @@ func (s *SafeService) scanDirectory(dir, source string, recursive bool) ([]model
 
 			// Skip hidden files
 			if strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+
+			// Skip symlinks to prevent symlink path traversal
+			if entry.Type()&os.ModeSymlink != 0 {
 				continue
 			}
 
@@ -243,6 +258,14 @@ func (s *SafeService) openSafe(safePath, password string) (*pwsafe.V3, error) {
 	absPath, err := s.ValidateSafePath(safePath)
 	if err != nil {
 		return nil, err
+	}
+
+	info, err := os.Stat(absPath)
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > s.maxSafeFileSize {
+		return nil, fmt.Errorf("safe file exceeds maximum size (%d bytes)", s.maxSafeFileSize)
 	}
 
 	db, err := pwsafe.OpenPWSafeFile(absPath, password)

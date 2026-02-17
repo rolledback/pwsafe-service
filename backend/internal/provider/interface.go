@@ -24,8 +24,8 @@ type SyncableSafesProvider interface {
 	BrandColor() string // Hex color (e.g., "#0078D4")
 
 	// Auth lifecycle
-	GetAuthURL(ctx context.Context) (string, error)
-	HandleCallback(ctx context.Context, code string, state string) error
+	GetAuthURL(ctx context.Context, sessionID string) (string, error)
+	HandleCallback(ctx context.Context, code string, state string, sessionID string) error
 	Disconnect(ctx context.Context) error
 	GetConnectionStatus(ctx context.Context, attemptRefresh bool) (*ConnectionStatus, error)
 

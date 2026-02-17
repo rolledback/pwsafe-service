@@ -49,6 +49,31 @@ describe("Rate Limiting", () => {
     },
     { timeout: 15000 },
   );
+
+  it("spoofed X-Forwarded-For does NOT bypass rate limiting", async () => {
+    // Wait for rate limiter to refill
+    await new Promise((r) => setTimeout(r, 5500));
+
+    const safes = await api.listSafes();
+    const safeId = safes.length > 0 ? safes[0].id : "nonexistent";
+    const path = `/api/safes/${safeId}/unlock`;
+
+    const statuses: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      const resp = await api.raw("POST", path, {
+        headers: {
+          "Content-Type": "application/json",
+          "X-Forwarded-For": `10.0.0.${i}`,
+        },
+        body: JSON.stringify({ password: "wrong" }),
+      });
+      statuses.push(resp.status);
+    }
+
+    // Should still be rate limited despite spoofed XFF — no trusted proxies
+    // configured, so real IP (127.0.0.1) is used for all requests
+    expect(statuses.slice(2)).toContain(429);
+  }, 15000);
 });
 
 describe("Web Rate Limiting", () => {

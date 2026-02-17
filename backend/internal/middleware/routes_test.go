@@ -17,7 +17,7 @@ func TestRegisterRoutes_CORSApplied(t *testing.T) {
 	mux := http.NewServeMux()
 	RegisterRoutes(mux, []Route{
 		{Pattern: "/api/test", Handler: okHandler},
-	}, "csrf-token", newTestAuthService(t))
+	}, "csrf-token", newTestAuthService(t), nil)
 
 	req := httptest.NewRequest("OPTIONS", "/api/test", nil)
 	rec := httptest.NewRecorder()
@@ -35,7 +35,7 @@ func TestRegisterRoutes_CsrfEnforced(t *testing.T) {
 	mux := http.NewServeMux()
 	RegisterRoutes(mux, []Route{
 		{Pattern: "/api/test", Handler: okHandler, Csrf: true},
-	}, "csrf-token", newTestAuthService(t))
+	}, "csrf-token", newTestAuthService(t), nil)
 
 	// Without token → 403
 	req := httptest.NewRequest("GET", "/api/test", nil)
@@ -59,7 +59,7 @@ func TestRegisterRoutes_CsrfSkipped(t *testing.T) {
 	mux := http.NewServeMux()
 	RegisterRoutes(mux, []Route{
 		{Pattern: "/api/test", Handler: okHandler, Csrf: false},
-	}, "csrf-token", newTestAuthService(t))
+	}, "csrf-token", newTestAuthService(t), nil)
 
 	req := httptest.NewRequest("GET", "/api/test", nil)
 	rec := httptest.NewRecorder()
@@ -73,7 +73,7 @@ func TestRegisterRoutes_MethodEnforced(t *testing.T) {
 	mux := http.NewServeMux()
 	RegisterRoutes(mux, []Route{
 		{Pattern: "/api/test", Handler: okHandler, Method: http.MethodPost},
-	}, "csrf-token", newTestAuthService(t))
+	}, "csrf-token", newTestAuthService(t), nil)
 
 	// Wrong method → 405
 	req := httptest.NewRequest("GET", "/api/test", nil)
@@ -96,7 +96,7 @@ func TestRegisterRoutes_MethodEmpty_AllowsAny(t *testing.T) {
 	mux := http.NewServeMux()
 	RegisterRoutes(mux, []Route{
 		{Pattern: "/api/test", Handler: okHandler},
-	}, "csrf-token", newTestAuthService(t))
+	}, "csrf-token", newTestAuthService(t), nil)
 
 	for _, method := range []string{"GET", "POST", "PUT", "DELETE"} {
 		req := httptest.NewRequest(method, "/api/test", nil)
@@ -112,7 +112,7 @@ func TestRegisterRoutes_MethodOptionsAlwaysAllowed(t *testing.T) {
 	mux := http.NewServeMux()
 	RegisterRoutes(mux, []Route{
 		{Pattern: "/api/test", Handler: okHandler, Method: http.MethodPost},
-	}, "csrf-token", newTestAuthService(t))
+	}, "csrf-token", newTestAuthService(t), nil)
 
 	// OPTIONS should pass through method check (handled by CORS)
 	req := httptest.NewRequest("OPTIONS", "/api/test", nil)
@@ -130,7 +130,7 @@ func TestRegisterRoutes_AuthEnforced(t *testing.T) {
 	mux := http.NewServeMux()
 	RegisterRoutes(mux, []Route{
 		{Pattern: "/api/test", Handler: okHandler, Auth: true},
-	}, "csrf-token", svc)
+	}, "csrf-token", svc, nil)
 
 	// No session → 401
 	req := httptest.NewRequest("GET", "/api/test", nil)
@@ -146,12 +146,12 @@ func TestRegisterRoutes_RateLimiterApplied(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	rl := NewRateLimiter(ctx, rate.Limit(0.01), 1)
+	rl := NewRateLimiter(ctx, rate.Limit(0.01), 1, nil)
 
 	mux := http.NewServeMux()
 	RegisterRoutes(mux, []Route{
 		{Pattern: "/api/test", Handler: okHandler, Limiter: rl},
-	}, "csrf-token", newTestAuthService(t))
+	}, "csrf-token", newTestAuthService(t), nil)
 
 	// First request → OK (uses burst)
 	req := httptest.NewRequest("GET", "/api/test", nil)

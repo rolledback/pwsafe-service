@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -16,21 +17,23 @@ import (
 
 // StaticProviderHandler handles HTTP requests for static safe operations (upload, delete)
 type StaticProviderHandler struct {
-	staticDir   string // data/static directory
-	safeService *service.SafeService
+	staticDir       string // data/static directory
+	maxSafeFileSize int64
+	safeService     *service.SafeService
 }
 
 // NewStaticProviderHandler creates a new static provider handler
 // dataDir is the base data directory; static files go in dataDir/static
-func NewStaticProviderHandler(dataDir string, safeService *service.SafeService) *StaticProviderHandler {
+func NewStaticProviderHandler(dataDir string, safeService *service.SafeService, maxSafeFileSize int64) *StaticProviderHandler {
 	staticDir := filepath.Join(dataDir, "static")
 	// Auto-create static directory
 	if err := os.MkdirAll(staticDir, 0700); err != nil {
 		log.Printf("Warning: failed to create static directory: %v", err)
 	}
 	return &StaticProviderHandler{
-		staticDir:   staticDir,
-		safeService: safeService,
+		staticDir:       staticDir,
+		maxSafeFileSize: maxSafeFileSize,
+		safeService:     safeService,
 	}
 }
 
@@ -119,12 +122,21 @@ func (h *StaticProviderHandler) uploadFile(w http.ResponseWriter, r *http.Reques
 		h.respondError(w, "Failed to save file", http.StatusInternalServerError)
 		return
 	}
-	defer dst.Close()
 
-	// Copy content
-	if _, err := io.Copy(dst, file); err != nil {
+	// Copy content with size limit enforcement
+	limitedFile := io.LimitReader(file, h.maxSafeFileSize+1)
+	written, err := io.Copy(dst, limitedFile)
+	if err != nil {
+		dst.Close()
+		os.Remove(destPath)
 		log.Printf("Error writing file %s: %v", destPath, err)
 		h.respondError(w, "Failed to save file", http.StatusInternalServerError)
+		return
+	}
+	dst.Close()
+	if written > h.maxSafeFileSize {
+		os.Remove(destPath)
+		h.respondError(w, fmt.Sprintf("File exceeds maximum size (%d bytes)", h.maxSafeFileSize), http.StatusRequestEntityTooLarge)
 		return
 	}
 

@@ -20,7 +20,7 @@ func TestSync_DownloadsSelectedFiles(t *testing.T) {
 	mockProvider.SetContent("f1", []byte("safe content"))
 
 	ctx := context.Background()
-	svc := NewSyncableSafesService(ctx, tempDir, mockProvider, 0)
+	svc := NewSyncableSafesService(ctx, tempDir, mockProvider, 0, 10<<20)
 	defer svc.Stop()
 
 	// Select the file
@@ -73,7 +73,7 @@ func TestSync_CleansUpUnselectedFiles(t *testing.T) {
 	mockProvider.SetFiles([]provider.RemoteFile{}) // No remote files
 
 	ctx := context.Background()
-	svc := NewSyncableSafesService(ctx, tempDir, mockProvider, 0)
+	svc := NewSyncableSafesService(ctx, tempDir, mockProvider, 0, 10<<20)
 	defer svc.Stop()
 
 	// Sync with nothing selected
@@ -92,7 +92,7 @@ func TestSync_UpdatesLastSyncTime(t *testing.T) {
 	mockProvider := mock.NewProvider("mock")
 
 	ctx := context.Background()
-	svc := NewSyncableSafesService(ctx, tempDir, mockProvider, 0)
+	svc := NewSyncableSafesService(ctx, tempDir, mockProvider, 0, 10<<20)
 	defer svc.Stop()
 
 	// Sync
@@ -119,7 +119,7 @@ func TestListFiles_MergesWithSavedSelections(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	svc := NewSyncableSafesService(ctx, tempDir, mockProvider, 0)
+	svc := NewSyncableSafesService(ctx, tempDir, mockProvider, 0, 10<<20)
 	defer svc.Stop()
 
 	// Pre-save selection for f1
@@ -170,7 +170,7 @@ func TestGetProviderStatus_ReturnsCorrectInfo(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	svc := NewSyncableSafesService(ctx, tempDir, mockProvider, 0)
+	svc := NewSyncableSafesService(ctx, tempDir, mockProvider, 0, 10<<20)
 	defer svc.Stop()
 
 	status, err := svc.GetProviderStatus(ctx)
@@ -207,7 +207,7 @@ func TestDisconnect_CleansUpFiles(t *testing.T) {
 	mockProvider := mock.NewProvider("mock")
 
 	ctx := context.Background()
-	svc := NewSyncableSafesService(ctx, tempDir, mockProvider, 0)
+	svc := NewSyncableSafesService(ctx, tempDir, mockProvider, 0, 10<<20)
 	defer svc.Stop()
 
 	// Disconnect
@@ -244,7 +244,7 @@ func TestSync_HandlesDownloadError(t *testing.T) {
 	// Don't set content - this will cause a "file not found" error
 
 	ctx := context.Background()
-	svc := NewSyncableSafesService(ctx, tempDir, mockProvider, 0)
+	svc := NewSyncableSafesService(ctx, tempDir, mockProvider, 0, 10<<20)
 	defer svc.Stop()
 
 	// Select the file
@@ -281,7 +281,7 @@ func TestSync_PreservesPathStructure(t *testing.T) {
 	mockProvider.SetContent("f1", []byte("deep content"))
 
 	ctx := context.Background()
-	svc := NewSyncableSafesService(ctx, tempDir, mockProvider, 0)
+	svc := NewSyncableSafesService(ctx, tempDir, mockProvider, 0, 10<<20)
 	defer svc.Stop()
 
 	// Select the file
@@ -311,7 +311,7 @@ func TestSync_FailsWhenNotConnected(t *testing.T) {
 	mockProvider.SetConnected(false) // Not connected
 
 	ctx := context.Background()
-	svc := NewSyncableSafesService(ctx, tempDir, mockProvider, 0)
+	svc := NewSyncableSafesService(ctx, tempDir, mockProvider, 0, 10<<20)
 	defer svc.Stop()
 
 	// Sync should fail with auth error
@@ -330,7 +330,7 @@ func TestGetLocalPath_RejectsPathTraversal(t *testing.T) {
 	mockProvider := mock.NewProvider("mock")
 
 	ctx := context.Background()
-	svc := NewSyncableSafesService(ctx, tempDir, mockProvider, 0)
+	svc := NewSyncableSafesService(ctx, tempDir, mockProvider, 0, 10<<20)
 	defer svc.Stop()
 
 	cases := []struct {
@@ -367,7 +367,7 @@ func TestSync_ReturnsLastModified(t *testing.T) {
 	mockProvider.SetContent("f1", []byte("content"))
 
 	ctx := context.Background()
-	svc := NewSyncableSafesService(ctx, tempDir, mockProvider, 0)
+	svc := NewSyncableSafesService(ctx, tempDir, mockProvider, 0, 10<<20)
 	defer svc.Stop()
 
 	// Select the file

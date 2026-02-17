@@ -7,6 +7,7 @@ type RemoteFile struct {
 	ID           string    // Provider-specific unique identifier
 	Name         string    // Display name (e.g., "passwords.psafe3")
 	Path         string    // Parent folder path (e.g., "/Documents/Passwords")
+	Size         int64     // File size in bytes (0 if unknown)
 	LastModified time.Time // Optional: for smarter sync decisions
 }
 

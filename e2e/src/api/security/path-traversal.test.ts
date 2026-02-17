@@ -75,6 +75,14 @@ describeDualMode("Path Traversal Protection", {}, (getApi, getServer) => {
     expect(body).toContain("</html>");
   });
 
+  it("/web/ with Windows-reserved characters returns 400", async () => {
+    const api = getApi();
+    const resp = await api.raw("GET", "/web/%3Cscript%3E", { csrfToken: null });
+    if (process.platform === "win32") {
+      expect(resp.status).toBe(400);
+    }
+  });
+
   const traversalPatterns = ["..%2F", "..%252F"];
 
   for (const pattern of traversalPatterns) {

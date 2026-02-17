@@ -6,26 +6,52 @@ import (
 	"strings"
 )
 
+// extractRemoteIP extracts the IP address from r.RemoteAddr, stripping the port if present.
+func extractRemoteIP(remoteAddr string) string {
+	ip, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		return remoteAddr
+	}
+	return ip
+}
+
+// IsTrustedProxy returns true if ip appears in the trustedProxies list.
+func IsTrustedProxy(ip string, trustedProxies []string) bool {
+	for _, trusted := range trustedProxies {
+		if ip == trusted {
+			return true
+		}
+	}
+	return false
+}
+
 // GetClientIP extracts the client IP from a request.
-// Checks X-Real-IP and X-Forwarded-For headers (set by reverse proxies like nginx)
-// before falling back to RemoteAddr.
-func GetClientIP(r *http.Request) string {
+// Proxy headers (X-Real-IP, X-Forwarded-For) are only honoured when the
+// remote address is in the trustedProxies list. Otherwise the remote IP is
+// returned directly, preventing header spoofing by untrusted clients.
+func GetClientIP(r *http.Request, trustedProxies []string) string {
+	remoteIP := extractRemoteIP(r.RemoteAddr)
+
+	if !IsTrustedProxy(remoteIP, trustedProxies) {
+		return remoteIP
+	}
+
 	// X-Real-IP is the most reliable when set by a trusted proxy
 	if ip := strings.TrimSpace(r.Header.Get("X-Real-IP")); ip != "" {
 		return ip
 	}
 
 	// X-Forwarded-For may contain a chain: "client, proxy1, proxy2"
+	// Walk from right to find the rightmost non-trusted IP (the real client)
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if ip := strings.TrimSpace(strings.SplitN(xff, ",", 2)[0]); ip != "" {
-			return ip
+		parts := strings.Split(xff, ",")
+		for i := len(parts) - 1; i >= 0; i-- {
+			ip := strings.TrimSpace(parts[i])
+			if ip != "" && !IsTrustedProxy(ip, trustedProxies) {
+				return ip
+			}
 		}
 	}
 
-	// Direct connection fallback
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return ip
+	return remoteIP
 }

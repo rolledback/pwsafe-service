@@ -147,7 +147,7 @@ func TestCORS_NonOptionsPassesThrough(t *testing.T) {
 // --- SecurityHeaders tests ---
 
 func TestSecurityHeaders_SetsHeaders(t *testing.T) {
-	handler := SecurityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := SecurityHeaders(false, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	req := httptest.NewRequest("GET", "/", nil)
@@ -168,7 +168,7 @@ func TestSecurityHeaders_SetsHeaders(t *testing.T) {
 
 func TestSecurityHeaders_CallsNext(t *testing.T) {
 	called := false
-	handler := SecurityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := SecurityHeaders(false, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 	}))
 	req := httptest.NewRequest("GET", "/", nil)
@@ -186,7 +186,7 @@ func TestRateLimiter_AllowsBurst(t *testing.T) {
 	defer cancel()
 
 	burst := 5
-	rl := NewRateLimiter(ctx, rate.Limit(1), burst)
+	rl := NewRateLimiter(ctx, rate.Limit(1), burst, nil)
 	handler := rl.Limit(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -207,7 +207,7 @@ func TestRateLimiter_BlocksAfterBurst(t *testing.T) {
 	defer cancel()
 
 	burst := 2
-	rl := NewRateLimiter(ctx, rate.Limit(0.01), burst)
+	rl := NewRateLimiter(ctx, rate.Limit(0.01), burst, nil)
 	handler := rl.Limit(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -234,7 +234,7 @@ func TestRateLimiter_VisitorLastSeenUpdated(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	rl := NewRateLimiter(ctx, rate.Limit(10), 10)
+	rl := NewRateLimiter(ctx, rate.Limit(10), 10, nil)
 	rl.getVisitor("1.2.3.4")
 	time.Sleep(10 * time.Millisecond)
 	rl.getVisitor("1.2.3.4")
@@ -287,7 +287,7 @@ func newTestAuthService(t *testing.T) *auth.AuthService {
 
 func TestRequireAuth_Unset_Returns503(t *testing.T) {
 	svc := newTestAuthService(t)
-	handler := RequireAuth(svc, func(w http.ResponseWriter, r *http.Request) {
+	handler := RequireAuth(svc, nil, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	req := httptest.NewRequest("GET", "/api/safes", nil)
@@ -303,7 +303,7 @@ func TestRequireAuth_Disabled_Passthrough(t *testing.T) {
 	svc := newTestAuthService(t)
 	svc.Setup("disabled", "")
 	called := false
-	handler := RequireAuth(svc, func(w http.ResponseWriter, r *http.Request) {
+	handler := RequireAuth(svc, nil, func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	})
@@ -327,7 +327,7 @@ func TestRequireAuth_Enabled_ValidSession(t *testing.T) {
 		t.Fatalf("Login failed: %v", err)
 	}
 	called := false
-	handler := RequireAuth(svc, func(w http.ResponseWriter, r *http.Request) {
+	handler := RequireAuth(svc, nil, func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	})
@@ -347,7 +347,7 @@ func TestRequireAuth_Enabled_ValidSession(t *testing.T) {
 func TestRequireAuth_Enabled_NoSession(t *testing.T) {
 	svc := newTestAuthService(t)
 	svc.Setup("enabled", "pass")
-	handler := RequireAuth(svc, func(w http.ResponseWriter, r *http.Request) {
+	handler := RequireAuth(svc, nil, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	req := httptest.NewRequest("GET", "/api/safes", nil)
@@ -373,7 +373,7 @@ func TestRequireAuth_Enabled_ExpiredSession(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	handler := RequireAuth(svc, func(w http.ResponseWriter, r *http.Request) {
+	handler := RequireAuth(svc, nil, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	req := httptest.NewRequest("GET", "/api/safes", nil)
@@ -389,7 +389,7 @@ func TestRequireAuth_Enabled_ExpiredSession(t *testing.T) {
 func TestRequireAuth_OPTIONS_Bypass(t *testing.T) {
 	svc := newTestAuthService(t)
 	svc.Setup("enabled", "pass")
-	handler := RequireAuth(svc, func(w http.ResponseWriter, r *http.Request) {
+	handler := RequireAuth(svc, nil, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -417,7 +417,7 @@ func TestRequireAuth_OPTIONS_Bypass(t *testing.T) {
 func TestGetClientIP_WithPort(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.RemoteAddr = "192.168.1.1:1234"
-	if ip := GetClientIP(req); ip != "192.168.1.1" {
+	if ip := GetClientIP(req, nil); ip != "192.168.1.1" {
 		t.Errorf("expected '192.168.1.1', got %q", ip)
 	}
 }
@@ -425,7 +425,7 @@ func TestGetClientIP_WithPort(t *testing.T) {
 func TestGetClientIP_WithoutPort(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.RemoteAddr = "192.168.1.1"
-	if ip := GetClientIP(req); ip != "192.168.1.1" {
+	if ip := GetClientIP(req, nil); ip != "192.168.1.1" {
 		t.Errorf("expected '192.168.1.1', got %q", ip)
 	}
 }
@@ -433,7 +433,7 @@ func TestGetClientIP_WithoutPort(t *testing.T) {
 func TestGetClientIP_IPv6WithPort(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.RemoteAddr = "[::1]:1234"
-	if ip := GetClientIP(req); ip != "::1" {
+	if ip := GetClientIP(req, nil); ip != "::1" {
 		t.Errorf("expected '::1', got %q", ip)
 	}
 }
@@ -441,7 +441,7 @@ func TestGetClientIP_IPv6WithPort(t *testing.T) {
 func TestGetClientIP_IPv6WithoutPort(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.RemoteAddr = "::1"
-	if ip := GetClientIP(req); ip != "::1" {
+	if ip := GetClientIP(req, nil); ip != "::1" {
 		t.Errorf("expected '::1', got %q", ip)
 	}
 }
@@ -449,7 +449,7 @@ func TestGetClientIP_IPv6WithoutPort(t *testing.T) {
 func TestGetClientIP_Empty(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.RemoteAddr = ""
-	if ip := GetClientIP(req); ip != "" {
+	if ip := GetClientIP(req, nil); ip != "" {
 		t.Errorf("expected empty string, got %q", ip)
 	}
 }
@@ -458,7 +458,8 @@ func TestGetClientIP_XRealIP(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.RemoteAddr = "10.0.0.1:1234"
 	req.Header.Set("X-Real-IP", "203.0.113.50")
-	if ip := GetClientIP(req); ip != "203.0.113.50" {
+	// Trusted proxy: honours X-Real-IP
+	if ip := GetClientIP(req, []string{"10.0.0.1"}); ip != "203.0.113.50" {
 		t.Errorf("expected '203.0.113.50', got %q", ip)
 	}
 }
@@ -467,7 +468,8 @@ func TestGetClientIP_XForwardedFor(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.RemoteAddr = "10.0.0.1:1234"
 	req.Header.Set("X-Forwarded-For", "203.0.113.50, 10.0.0.1")
-	if ip := GetClientIP(req); ip != "203.0.113.50" {
+	// Trusted proxy: honours X-Forwarded-For
+	if ip := GetClientIP(req, []string{"10.0.0.1"}); ip != "203.0.113.50" {
 		t.Errorf("expected '203.0.113.50', got %q", ip)
 	}
 }
@@ -477,7 +479,8 @@ func TestGetClientIP_XRealIP_TakesPrecedence(t *testing.T) {
 	req.RemoteAddr = "10.0.0.1:1234"
 	req.Header.Set("X-Real-IP", "1.2.3.4")
 	req.Header.Set("X-Forwarded-For", "5.6.7.8")
-	if ip := GetClientIP(req); ip != "1.2.3.4" {
+	// Trusted proxy: X-Real-IP takes precedence over X-Forwarded-For
+	if ip := GetClientIP(req, []string{"10.0.0.1"}); ip != "1.2.3.4" {
 		t.Errorf("expected X-Real-IP '1.2.3.4', got %q", ip)
 	}
 }
@@ -485,7 +488,7 @@ func TestGetClientIP_XRealIP_TakesPrecedence(t *testing.T) {
 func TestGetClientIP_NoHeaders_FallsBack(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.RemoteAddr = "192.168.1.1:5678"
-	if ip := GetClientIP(req); ip != "192.168.1.1" {
+	if ip := GetClientIP(req, nil); ip != "192.168.1.1" {
 		t.Errorf("expected '192.168.1.1', got %q", ip)
 	}
 }

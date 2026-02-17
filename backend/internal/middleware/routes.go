@@ -18,7 +18,7 @@ type Route struct {
 
 // RegisterRoutes registers all routes on the given mux, building the middleware
 // chain for each route in a fixed order: Handler → Method → Limiter → Auth → Csrf → CORS.
-func RegisterRoutes(mux *http.ServeMux, routes []Route, csrfToken string, authService *auth.AuthService) {
+func RegisterRoutes(mux *http.ServeMux, routes []Route, csrfToken string, authService *auth.AuthService, trustedProxies []string) {
 	for _, route := range routes {
 		h := route.Handler
 
@@ -39,7 +39,7 @@ func RegisterRoutes(mux *http.ServeMux, routes []Route, csrfToken string, authSe
 		}
 
 		if route.Auth {
-			h = RequireAuth(authService, h)
+			h = RequireAuth(authService, trustedProxies, h)
 		}
 
 		if route.Csrf {

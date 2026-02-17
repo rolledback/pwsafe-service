@@ -110,4 +110,14 @@ describe("Auth login and logout", () => {
     const resp = await badApi.raw("GET", "/api/safes");
     expect(resp.status).toBe(401);
   });
+
+  it("oversized login body is rejected", async () => {
+    await sleep(STRICT_RATE_WAIT);
+    const bigBody = JSON.stringify({ password: "x".repeat(2000) });
+    const resp = await api.raw("POST", "/api/auth/login", {
+      body: bigBody,
+      headers: { "Content-Type": "application/json" },
+    });
+    expect([400, 413]).toContain(resp.status);
+  });
 });

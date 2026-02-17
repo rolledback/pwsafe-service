@@ -11,6 +11,7 @@ type SelectedFile struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	Path     string `json:"path"`
+	Size     int64  `json:"size"`
 	Selected bool   `json:"selected"`
 }
 

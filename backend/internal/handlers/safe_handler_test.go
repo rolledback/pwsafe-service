@@ -31,7 +31,7 @@ func getSafeByName(handler *SafeHandler, name string) *models.SafeFile {
 
 func TestListSafes_Handler(t *testing.T) {
 	tmpDir := testutil.SetupTestDataDir(t)
-	service := service.NewSafeService(tmpDir)
+	service := service.NewSafeService(tmpDir, 10<<20)
 	handler := NewSafeHandler(service)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/safes", nil)
@@ -67,7 +67,7 @@ func TestListSafes_Handler(t *testing.T) {
 
 func TestUnlockSafe_Success(t *testing.T) {
 	tmpDir := testutil.SetupTestDataDir(t)
-	service := service.NewSafeService(tmpDir)
+	service := service.NewSafeService(tmpDir, 10<<20)
 	handler := NewSafeHandler(service)
 
 	// Get safe info first
@@ -101,7 +101,7 @@ func TestUnlockSafe_Success(t *testing.T) {
 
 func TestUnlockSafe_WrongPassword(t *testing.T) {
 	tmpDir := testutil.SetupTestDataDir(t)
-	service := service.NewSafeService(tmpDir)
+	service := service.NewSafeService(tmpDir, 10<<20)
 	handler := NewSafeHandler(service)
 
 	safe := getSafeByName(handler, "simple.psafe3")
@@ -125,7 +125,7 @@ func TestUnlockSafe_WrongPassword(t *testing.T) {
 
 func TestUnlockSafe_MissingPassword(t *testing.T) {
 	tmpDir := testutil.SetupTestDataDir(t)
-	service := service.NewSafeService(tmpDir)
+	service := service.NewSafeService(tmpDir, 10<<20)
 	handler := NewSafeHandler(service)
 
 	safe := getSafeByName(handler, "simple.psafe3")
@@ -149,7 +149,7 @@ func TestUnlockSafe_MissingPassword(t *testing.T) {
 
 func TestUnlockSafe_NonexistentID(t *testing.T) {
 	tmpDir := testutil.SetupTestDataDir(t)
-	service := service.NewSafeService(tmpDir)
+	service := service.NewSafeService(tmpDir, 10<<20)
 	handler := NewSafeHandler(service)
 
 	reqBody := models.UnlockRequest{Password: "password"}
@@ -168,7 +168,7 @@ func TestUnlockSafe_NonexistentID(t *testing.T) {
 
 func TestUnlockSafe_InvalidJSON(t *testing.T) {
 	tmpDir := testutil.SetupTestDataDir(t)
-	service := service.NewSafeService(tmpDir)
+	service := service.NewSafeService(tmpDir, 10<<20)
 	handler := NewSafeHandler(service)
 
 	safe := getSafeByName(handler, "simple.psafe3")
@@ -189,7 +189,7 @@ func TestUnlockSafe_InvalidJSON(t *testing.T) {
 
 func TestGetEntryPassword_Success(t *testing.T) {
 	tmpDir := testutil.SetupTestDataDir(t)
-	service := service.NewSafeService(tmpDir)
+	service := service.NewSafeService(tmpDir, 10<<20)
 	handler := NewSafeHandler(service)
 
 	safe := getSafeByName(handler, "simple.psafe3")
@@ -225,7 +225,7 @@ func TestGetEntryPassword_Success(t *testing.T) {
 
 func TestGetEntryPassword_WrongUUID(t *testing.T) {
 	tmpDir := testutil.SetupTestDataDir(t)
-	service := service.NewSafeService(tmpDir)
+	service := service.NewSafeService(tmpDir, 10<<20)
 	handler := NewSafeHandler(service)
 
 	safe := getSafeByName(handler, "simple.psafe3")
@@ -252,7 +252,7 @@ func TestGetEntryPassword_WrongUUID(t *testing.T) {
 
 func TestGetEntryPassword_MissingFields(t *testing.T) {
 	tmpDir := testutil.SetupTestDataDir(t)
-	service := service.NewSafeService(tmpDir)
+	service := service.NewSafeService(tmpDir, 10<<20)
 	handler := NewSafeHandler(service)
 
 	safe := getSafeByName(handler, "simple.psafe3")
@@ -279,7 +279,7 @@ func TestGetEntryPassword_MissingFields(t *testing.T) {
 
 func TestGetEntryPassword_SpecialCharacters(t *testing.T) {
 	tmpDir := testutil.SetupTestDataDir(t)
-	service := service.NewSafeService(tmpDir)
+	service := service.NewSafeService(tmpDir, 10<<20)
 	handler := NewSafeHandler(service)
 
 	safe := getSafeByName(handler, "three.psafe3")

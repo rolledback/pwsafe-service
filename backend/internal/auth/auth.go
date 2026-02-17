@@ -27,6 +27,9 @@ const (
 	passwordHashFile           = ".password_hash"
 )
 
+// dummyHash is used for timing-safe login when no password hash exists
+var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("timing-safe-dummy"), bcrypt.DefaultCost)
+
 // Session represents an active user session
 type Session struct {
 	ExpiresAt time.Time
@@ -65,10 +68,10 @@ func NewAuthService(dataDir, configDir string, settings *config.Settings) *AuthS
 		}
 
 		if settings.Auth.BcryptCost != 0 {
-			if settings.Auth.BcryptCost >= 4 && settings.Auth.BcryptCost <= 31 {
+			if settings.Auth.BcryptCost >= 4 && settings.Auth.BcryptCost <= 14 {
 				cost = settings.Auth.BcryptCost
 			} else {
-				log.Printf("Warning: invalid bcryptCost %d (must be 4-31), using default %d", settings.Auth.BcryptCost, defaultBcryptCost)
+				log.Printf("Warning: invalid bcryptCost %d (must be 4-14), using default %d", settings.Auth.BcryptCost, defaultBcryptCost)
 			}
 		}
 
@@ -94,7 +97,8 @@ func NewAuthService(dataDir, configDir string, settings *config.Settings) *AuthS
 		}
 
 		if timeout > maxLifetime {
-			log.Printf("Warning: sessionTimeout %s exceeds maxSessionLifetime %s, this is likely a misconfiguration", timeout, maxLifetime)
+			log.Printf("Warning: sessionTimeout %s exceeds maxSessionLifetime %s, capping", timeout, maxLifetime)
+			timeout = maxLifetime
 		}
 	}
 
@@ -137,6 +141,9 @@ func (s *AuthService) Setup(mode string, password string) error {
 		if password == "" {
 			return fmt.Errorf("password required when auth mode is enabled")
 		}
+		if len(password) > 72 {
+			password = password[:72]
+		}
 		hash, err := bcrypt.GenerateFromPassword([]byte(password), s.bcryptCost)
 		if err != nil {
 			return fmt.Errorf("failed to hash password: %w", err)
@@ -167,9 +174,14 @@ func (s *AuthService) Setup(mode string, password string) error {
 
 // Login verifies password and creates a session
 func (s *AuthService) Login(password string, ip string) (string, error) {
+	if len(password) > 72 {
+		password = password[:72]
+	}
+
 	hashPath := filepath.Join(s.dataDir, passwordHashFile)
 	hash, err := os.ReadFile(hashPath)
 	if err != nil {
+		bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
 		return "", fmt.Errorf("invalid credentials")
 	}
 
@@ -338,6 +350,13 @@ func GetSessionIDFromRequest(r *http.Request) string {
 		return ""
 	}
 	return cookie.Value
+}
+
+// ClearAllSessions removes all active sessions
+func (s *AuthService) ClearAllSessions() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sessions = make(map[string]*Session)
 }
 
 // SessionCount returns the number of active sessions (for testing)

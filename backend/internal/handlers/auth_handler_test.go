@@ -21,7 +21,7 @@ func newTestAuthHandler(t *testing.T) *AuthHandler {
 	os.WriteFile(filepath.Join(configDir, "settings.json"), []byte("{}"), 0644)
 	settings := &config.Settings{}
 	svc := auth.NewAuthService(dataDir, configDir, settings)
-	return NewAuthHandler(svc)
+	return NewAuthHandler(svc, nil)
 }
 
 func newEnabledAuthHandler(t *testing.T) *AuthHandler {
@@ -32,7 +32,7 @@ func newEnabledAuthHandler(t *testing.T) *AuthHandler {
 	settings := &config.Settings{}
 	svc := auth.NewAuthService(dataDir, configDir, settings)
 	svc.Setup("enabled", "testpass")
-	return NewAuthHandler(svc)
+	return NewAuthHandler(svc, nil)
 }
 
 func TestStatus_GET_ReturnsMode(t *testing.T) {
@@ -218,5 +218,32 @@ func TestLogout_ClearsCookie(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected Set-Cookie with pwsafe_session_id and negative MaxAge on logout")
+	}
+}
+
+func TestLogin_OversizedBody_Rejected(t *testing.T) {
+	h := newEnabledAuthHandler(t)
+	// Create a body larger than 1KB
+	bigBody := strings.Repeat("x", 2048)
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader([]byte(bigBody)))
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	h.Login(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for oversized body, got %d", w.Code)
+	}
+}
+
+func TestSetup_OversizedBody_Rejected(t *testing.T) {
+	h := newTestAuthHandler(t)
+	bigBody := strings.Repeat("x", 2048)
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/setup", bytes.NewReader([]byte(bigBody)))
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	h.Setup(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for oversized body, got %d", w.Code)
 	}
 }

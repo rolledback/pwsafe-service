@@ -54,4 +54,30 @@ describeDualMode("Headers and CORS", {}, (getApi) => {
     expect(cspNonce2).toBeTruthy();
     expect(cspNonce1).not.toBe(cspNonce2);
   });
+
+  it("API responses include Cache-Control: no-store", async () => {
+    const api = getApi();
+    const resp = await api.raw("GET", "/api/safes");
+    expect(resp.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("/web/ responses do NOT include Cache-Control: no-store", async () => {
+    const api = getApi();
+    const resp = await api.raw("GET", "/web/", { csrfToken: null });
+    expect(resp.headers.get("cache-control")).not.toBe("no-store");
+  });
+
+  it("/web/bundle.js.map returns 404", async () => {
+    const api = getApi();
+    const resp = await api.raw("GET", "/web/bundle.js.map", { csrfToken: null });
+    expect(resp.status).toBe(404);
+  });
+
+  it("security headers present on error responses", async () => {
+    const api = getApi();
+    const resp = await api.raw("GET", "/api/nonexistent");
+    expect(resp.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(resp.headers.get("x-frame-options")).toBe("DENY");
+    expect(resp.headers.get("referrer-policy")).toBe("no-referrer");
+  });
 });

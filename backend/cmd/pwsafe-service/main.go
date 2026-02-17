@@ -22,8 +22,10 @@ import (
 	"github.com/rolledback/pwsafe-service/backend/internal/middleware"
 	"github.com/rolledback/pwsafe-service/backend/internal/provider"
 	"github.com/rolledback/pwsafe-service/backend/internal/provider/mock"
+	"github.com/rolledback/pwsafe-service/backend/internal/provider/oauthstate"
 	"github.com/rolledback/pwsafe-service/backend/internal/provider/onedrive"
 	"github.com/rolledback/pwsafe-service/backend/internal/service"
+	"github.com/rolledback/pwsafe-service/backend/internal/webpath"
 )
 
 func main() {
@@ -44,12 +46,20 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	safeService := service.NewSafeService(cfg.DataDirectory)
+	safeService := service.NewSafeService(cfg.DataDirectory, settings.GetMaxSafeFileSize())
 	safeHandler := handlers.NewSafeHandler(safeService)
 
 	// Prime the safe ID cache on startup
 	if _, err := safeService.ListSafes(); err != nil {
 		log.Printf("Warning: failed to prime safe ID cache: %v", err)
+	}
+
+	// Create OAuth state store
+	oauthStore := oauthstate.NewStore(10 * time.Minute)
+
+	// Inject oauthStore into each provider's config
+	for _, providerConfig := range settings.Providers {
+		providerConfig["oauthStore"] = oauthStore
 	}
 
 	// Create provider registry and register factories
@@ -77,7 +87,7 @@ func main() {
 	// Create SyncableSafesService for each discovered provider
 	services := make(map[string]*service.SyncableSafesService)
 	for id, p := range providers {
-		svc := service.NewSyncableSafesService(ctx, cfg.DataDirectory, p, syncInterval)
+		svc := service.NewSyncableSafesService(ctx, cfg.DataDirectory, p, syncInterval, settings.GetMaxSafeFileSize())
 		services[id] = svc
 		defer svc.Stop()
 	}
@@ -88,11 +98,11 @@ func main() {
 	providersHandler := handlers.NewProvidersHandler(services, safeService)
 
 	// Create static provider handler (for upload/delete of static safes)
-	staticProviderHandler := handlers.NewStaticProviderHandler(cfg.DataDirectory, safeService)
+	staticProviderHandler := handlers.NewStaticProviderHandler(cfg.DataDirectory, safeService, settings.GetMaxSafeFileSize())
 
 	// Create auth service
 	authService := auth.NewAuthService(cfg.DataDirectory, cfg.ConfigDirectory, settings)
-	authHandler := handlers.NewAuthHandler(authService)
+	authHandler := handlers.NewAuthHandler(authService, settings.TrustedProxies)
 
 	// Log TLS warning when auth mode is enabled
 	if authService.GetMode() == "enabled" {
@@ -103,7 +113,7 @@ func main() {
 	go authService.CleanupExpiredSessions(ctx)
 
 	// Rate limiters
-	limiters := middleware.NewRateLimiters(ctx, settings.RateLimiter)
+	limiters := middleware.NewRateLimiters(ctx, settings.RateLimiter, settings.TrustedProxies)
 
 	// Generate CSRF token
 	csrfTokenBytes := make([]byte, 32)
@@ -152,10 +162,10 @@ func main() {
 			if middleware.IsOAuthCallback(r.URL.Path) {
 				providersHandler.Route(w, r)
 			} else {
-				middleware.RequireAuth(authService, limiters.Standard.Limit(providersHandler.Route))(w, r)
+				middleware.RequireAuth(authService, settings.TrustedProxies, limiters.Standard.Limit(providersHandler.Route))(w, r)
 			}
 		}, Csrf: true},
-	}, csrfToken, authService)
+	}, csrfToken, authService, settings.TrustedProxies)
 
 	// Resolve absolute static dir once for containment checks
 	absStaticDir, err := filepath.Abs(cfg.StaticDir)
@@ -165,6 +175,18 @@ func main() {
 
 	mux.HandleFunc("/web/", limiters.Web.Limit(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path[4:] // Remove "/web" prefix
+
+		// Block control characters and Windows-reserved characters
+		if !webpath.IsValid(path) {
+			http.Error(w, "Invalid path", http.StatusBadRequest)
+			return
+		}
+
+		// Block source map files
+		if strings.HasSuffix(path, ".map") {
+			http.NotFound(w, r)
+			return
+		}
 
 		// For index.html or root, serve injected version with CSP nonce
 		if path == "/" || path == "/index.html" {
@@ -206,8 +228,13 @@ func main() {
 	})
 
 	server := &http.Server{
-		Addr:    fmt.Sprintf("%s:%s", cfg.ServerHost, cfg.ServerPort),
-		Handler: middleware.Logging(middleware.SecurityHeaders(mux)),
+		Addr:              fmt.Sprintf("%s:%s", cfg.ServerHost, cfg.ServerPort),
+		Handler:           middleware.Logging(middleware.SecurityHeaders(settings.HSTS, settings.TrustedProxies, mux)),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      300 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20, // 1MB
 	}
 
 	// Graceful shutdown on SIGTERM/SIGINT (needed for coverage data flush)
@@ -228,7 +255,10 @@ func main() {
 // serveInjectedHTML serves the index.html template with a per-request CSP nonce.
 func serveInjectedHTML(w http.ResponseWriter, htmlTemplate string) {
 	cspNonceBytes := make([]byte, 16)
-	io.ReadFull(rand.Reader, cspNonceBytes)
+	if _, err := io.ReadFull(rand.Reader, cspNonceBytes); err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
 	cspNonce := base64.StdEncoding.EncodeToString(cspNonceBytes)
 
 	html := strings.Replace(htmlTemplate, "%CSP_NONCE%", cspNonce, -1)

@@ -20,6 +20,7 @@ export interface ServerOptions {
   password?: string;
   sessionTimeout?: string; // e.g., "2s", "3m"
   skipAuthSetup?: boolean; // skip auto-setup (for auth-setup tests)
+  trustedProxies?: string[]; // IPs allowed to set proxy headers
   rateLimiter?: {
     standard?: RateLimitTierOptions;
     strict?: RateLimitTierOptions;
@@ -81,6 +82,9 @@ export class ServerInstance {
     }
     if (this.options.rateLimiter) {
       settings.rateLimiter = this.options.rateLimiter;
+    }
+    if (this.options.trustedProxies) {
+      settings.trustedProxies = this.options.trustedProxies;
     }
     await writeFile(join(configDir, "settings.json"), JSON.stringify(settings, null, 2));
 

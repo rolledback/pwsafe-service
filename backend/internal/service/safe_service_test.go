@@ -3,6 +3,7 @@ package service
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/rolledback/pwsafe-service/backend/internal/testutil"
@@ -10,7 +11,7 @@ import (
 
 func TestListSafes(t *testing.T) {
 	tmpDir := testutil.SetupTestDataDir(t)
-	service := NewSafeService(tmpDir)
+	service := NewSafeService(tmpDir, 10*1024*1024)
 
 	safes, err := service.ListSafes()
 	if err != nil {
@@ -50,7 +51,7 @@ func TestListSafes(t *testing.T) {
 }
 
 func TestListSafes_NonexistentDirectory(t *testing.T) {
-	service := NewSafeService("/nonexistent/path")
+	service := NewSafeService("/nonexistent/path", 10*1024*1024)
 
 	// ListSafes no longer returns error for missing directories - it just returns empty
 	safes, err := service.ListSafes()
@@ -64,7 +65,7 @@ func TestListSafes_NonexistentDirectory(t *testing.T) {
 
 func TestUnlockSafe_Simple(t *testing.T) {
 	tmpDir := testutil.SetupTestDataDir(t)
-	service := NewSafeService(tmpDir)
+	service := NewSafeService(tmpDir, 10*1024*1024)
 
 	structure, err := service.UnlockSafe("/data/static/simple.psafe3", "password")
 	if err != nil {
@@ -97,7 +98,7 @@ func TestUnlockSafe_Simple(t *testing.T) {
 
 func TestUnlockSafe_Three(t *testing.T) {
 	tmpDir := testutil.SetupTestDataDir(t)
-	service := NewSafeService(tmpDir)
+	service := NewSafeService(tmpDir, 10*1024*1024)
 
 	structure, err := service.UnlockSafe("/data/static/three.psafe3", "three3#;")
 	if err != nil {
@@ -111,7 +112,7 @@ func TestUnlockSafe_Three(t *testing.T) {
 
 func TestUnlockSafe_WrongPassword(t *testing.T) {
 	tmpDir := testutil.SetupTestDataDir(t)
-	service := NewSafeService(tmpDir)
+	service := NewSafeService(tmpDir, 10*1024*1024)
 
 	_, err := service.UnlockSafe("/data/static/simple.psafe3", "wrongpassword")
 	if err == nil {
@@ -121,7 +122,7 @@ func TestUnlockSafe_WrongPassword(t *testing.T) {
 
 func TestUnlockSafe_NonexistentFile(t *testing.T) {
 	tmpDir := testutil.SetupEmptyDataDir(t)
-	service := NewSafeService(tmpDir)
+	service := NewSafeService(tmpDir, 10*1024*1024)
 
 	_, err := service.UnlockSafe("/data/static/nonexistent.psafe3", "password")
 	if err == nil {
@@ -131,7 +132,7 @@ func TestUnlockSafe_NonexistentFile(t *testing.T) {
 
 func TestUnlockSafe_DirectoryTraversal(t *testing.T) {
 	tmpDir := testutil.SetupEmptyDataDir(t)
-	service := NewSafeService(tmpDir)
+	service := NewSafeService(tmpDir, 10*1024*1024)
 
 	_, err := service.UnlockSafe("/data/static/../../../etc/passwd", "password")
 	if err == nil {
@@ -141,7 +142,7 @@ func TestUnlockSafe_DirectoryTraversal(t *testing.T) {
 
 func TestUnlockSafe_InvalidPath(t *testing.T) {
 	tmpDir := testutil.SetupEmptyDataDir(t)
-	service := NewSafeService(tmpDir)
+	service := NewSafeService(tmpDir, 10*1024*1024)
 
 	_, err := service.UnlockSafe("/other/simple.psafe3", "password")
 	if err == nil {
@@ -151,7 +152,7 @@ func TestUnlockSafe_InvalidPath(t *testing.T) {
 
 func TestGetEntryPassword_Simple(t *testing.T) {
 	tmpDir := testutil.SetupTestDataDir(t)
-	service := NewSafeService(tmpDir)
+	service := NewSafeService(tmpDir, 10*1024*1024)
 
 	password, err := service.GetEntryPassword("/data/static/simple.psafe3", "password", "c4dcfb52-b944-f141-af96-b746f184afe2")
 	if err != nil {
@@ -165,7 +166,7 @@ func TestGetEntryPassword_Simple(t *testing.T) {
 
 func TestGetEntryPassword_Three(t *testing.T) {
 	tmpDir := testutil.SetupTestDataDir(t)
-	service := NewSafeService(tmpDir)
+	service := NewSafeService(tmpDir, 10*1024*1024)
 
 	password, err := service.GetEntryPassword("/data/static/three.psafe3", "three3#;", "6f1738b6-4a22-314a-8bbf-5c3507f0d489")
 	if err != nil {
@@ -179,7 +180,7 @@ func TestGetEntryPassword_Three(t *testing.T) {
 
 func TestGetEntryPassword_WrongUUID(t *testing.T) {
 	tmpDir := testutil.SetupTestDataDir(t)
-	service := NewSafeService(tmpDir)
+	service := NewSafeService(tmpDir, 10*1024*1024)
 
 	_, err := service.GetEntryPassword("/data/static/simple.psafe3", "password", "00000000-0000-0000-0000-000000000000")
 	if err == nil {
@@ -189,7 +190,7 @@ func TestGetEntryPassword_WrongUUID(t *testing.T) {
 
 func TestGetEntryPassword_WrongPassword(t *testing.T) {
 	tmpDir := testutil.SetupTestDataDir(t)
-	service := NewSafeService(tmpDir)
+	service := NewSafeService(tmpDir, 10*1024*1024)
 
 	_, err := service.GetEntryPassword("/data/static/simple.psafe3", "wrongpassword", "c4dcfb52-b944-f141-af96-b746f184afe2")
 	if err == nil {
@@ -199,7 +200,7 @@ func TestGetEntryPassword_WrongPassword(t *testing.T) {
 
 func TestGetEntryPassword_NonexistentFile(t *testing.T) {
 	tmpDir := testutil.SetupEmptyDataDir(t)
-	service := NewSafeService(tmpDir)
+	service := NewSafeService(tmpDir, 10*1024*1024)
 
 	_, err := service.GetEntryPassword("/data/static/nonexistent.psafe3", "password", "c4dcfb52-b944-f141-af96-b746f184afe2")
 	if err == nil {
@@ -216,7 +217,7 @@ func TestListSafes_OnlyPsafe3Files(t *testing.T) {
 	os.WriteFile(filepath.Join(staticDir, "README.md"), []byte{}, 0644)
 	os.Mkdir(filepath.Join(staticDir, "subdir"), 0755)
 
-	service := NewSafeService(tmpDir)
+	service := NewSafeService(tmpDir, 10*1024*1024)
 	safes, err := service.ListSafes()
 	if err != nil {
 		t.Fatalf("ListSafes failed: %v", err)
@@ -252,7 +253,7 @@ func TestListSafes_WithOnedriveSubdir(t *testing.T) {
 	os.WriteFile(filepath.Join(onedriveDir, ".tokens.json"), []byte{}, 0644)
 	os.WriteFile(filepath.Join(onedriveDir, ".config.json"), []byte{}, 0644)
 
-	service := NewSafeService(tmpDir)
+	service := NewSafeService(tmpDir, 10*1024*1024)
 	safes, err := service.ListSafes()
 	if err != nil {
 		t.Fatalf("ListSafes failed: %v", err)
@@ -313,7 +314,7 @@ func TestListSafes_NoOnedriveSubdir(t *testing.T) {
 	staticDir := filepath.Join(tmpDir, "static")
 	os.WriteFile(filepath.Join(staticDir, "static.psafe3"), []byte{}, 0644)
 
-	service := NewSafeService(tmpDir)
+	service := NewSafeService(tmpDir, 10*1024*1024)
 	safes, err := service.ListSafes()
 	if err != nil {
 		t.Fatalf("ListSafes failed: %v", err)
@@ -333,7 +334,7 @@ func TestListSafes_OnedriveDeepNesting(t *testing.T) {
 	os.MkdirAll(deepPath, 0755)
 	os.WriteFile(filepath.Join(deepPath, "bank.psafe3"), []byte{}, 0644)
 
-	service := NewSafeService(tmpDir)
+	service := NewSafeService(tmpDir, 10*1024*1024)
 	safes, err := service.ListSafes()
 	if err != nil {
 		t.Fatalf("ListSafes failed: %v", err)
@@ -362,7 +363,7 @@ func TestListSafes_SkipsHiddenFilesInRoot(t *testing.T) {
 	os.WriteFile(filepath.Join(staticDir, ".hidden.psafe3"), []byte{}, 0644)
 	os.WriteFile(filepath.Join(staticDir, ".tokens.json"), []byte{}, 0644)
 
-	service := NewSafeService(tmpDir)
+	service := NewSafeService(tmpDir, 10*1024*1024)
 	safes, err := service.ListSafes()
 	if err != nil {
 		t.Fatalf("ListSafes failed: %v", err)
@@ -378,7 +379,7 @@ func TestListSafes_SkipsHiddenFilesInRoot(t *testing.T) {
 }
 
 func TestComputeID_Deterministic(t *testing.T) {
-	service := NewSafeService(t.TempDir())
+	service := NewSafeService(t.TempDir(), 10*1024*1024)
 
 	id1 := service.ComputeID("static", "simple.psafe3")
 	id2 := service.ComputeID("static", "simple.psafe3")
@@ -389,7 +390,7 @@ func TestComputeID_Deterministic(t *testing.T) {
 }
 
 func TestComputeID_DifferentInputs(t *testing.T) {
-	service := NewSafeService(t.TempDir())
+	service := NewSafeService(t.TempDir(), 10*1024*1024)
 
 	id1 := service.ComputeID("static", "simple.psafe3")
 	id2 := service.ComputeID("static", "three.psafe3")
@@ -404,7 +405,7 @@ func TestComputeID_DifferentInputs(t *testing.T) {
 }
 
 func TestComputeID_Length(t *testing.T) {
-	service := NewSafeService(t.TempDir())
+	service := NewSafeService(t.TempDir(), 10*1024*1024)
 
 	cases := []struct {
 		provider string
@@ -425,7 +426,7 @@ func TestComputeID_Length(t *testing.T) {
 
 func TestValidateSafePath_Valid(t *testing.T) {
 	tmpDir := testutil.SetupTestDataDir(t)
-	service := NewSafeService(tmpDir)
+	service := NewSafeService(tmpDir, 10*1024*1024)
 
 	absPath, err := service.ValidateSafePath("/data/static/simple.psafe3")
 	if err != nil {
@@ -440,7 +441,7 @@ func TestValidateSafePath_Valid(t *testing.T) {
 
 func TestValidateSafePath_Traversal(t *testing.T) {
 	tmpDir := testutil.SetupEmptyDataDir(t)
-	service := NewSafeService(tmpDir)
+	service := NewSafeService(tmpDir, 10*1024*1024)
 
 	_, err := service.ValidateSafePath("/data/static/../../etc/passwd")
 	if err == nil {
@@ -450,7 +451,7 @@ func TestValidateSafePath_Traversal(t *testing.T) {
 
 func TestValidateSafePath_NonDataPath(t *testing.T) {
 	tmpDir := testutil.SetupEmptyDataDir(t)
-	service := NewSafeService(tmpDir)
+	service := NewSafeService(tmpDir, 10*1024*1024)
 
 	_, err := service.ValidateSafePath("/other/static/simple.psafe3")
 	if err == nil {
@@ -460,7 +461,7 @@ func TestValidateSafePath_NonDataPath(t *testing.T) {
 
 func TestValidateSafePath_NonexistentFile(t *testing.T) {
 	tmpDir := testutil.SetupEmptyDataDir(t)
-	service := NewSafeService(tmpDir)
+	service := NewSafeService(tmpDir, 10*1024*1024)
 
 	_, err := service.ValidateSafePath("/data/static/nonexistent.psafe3")
 	if err == nil {
@@ -470,7 +471,7 @@ func TestValidateSafePath_NonexistentFile(t *testing.T) {
 
 func TestResolvePath_CacheHit(t *testing.T) {
 	tmpDir := testutil.SetupTestDataDir(t)
-	service := NewSafeService(tmpDir)
+	service := NewSafeService(tmpDir, 10*1024*1024)
 
 	// Populate cache via ListSafes
 	safes, err := service.ListSafes()
@@ -497,7 +498,7 @@ func TestResolvePath_CacheHit(t *testing.T) {
 }
 
 func TestResolvePath_CacheMiss(t *testing.T) {
-	service := NewSafeService(t.TempDir())
+	service := NewSafeService(t.TempDir(), 10*1024*1024)
 
 	_, err := service.ResolvePath("nonexistent-id")
 	if err == nil {
@@ -517,7 +518,7 @@ func TestListSafes_SkipsHiddenDirectories(t *testing.T) {
 	// Also create a visible safe
 	os.WriteFile(filepath.Join(onedriveDir, "visible.psafe3"), []byte{}, 0644)
 
-	service := NewSafeService(tmpDir)
+	service := NewSafeService(tmpDir, 10*1024*1024)
 	safes, err := service.ListSafes()
 	if err != nil {
 		t.Fatalf("ListSafes failed: %v", err)
@@ -532,5 +533,103 @@ func TestListSafes_SkipsHiddenDirectories(t *testing.T) {
 
 	if len(safes) > 0 && safes[0].Name != "visible.psafe3" {
 		t.Errorf("Expected name 'visible.psafe3', got '%s'", safes[0].Name)
+	}
+}
+
+func TestScanDirectory_SkipsSymlinks(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a "static" dir (non-recursive scan) with a real file and a symlinked file
+	staticDir := filepath.Join(tmpDir, "static")
+	os.MkdirAll(staticDir, 0755)
+	os.WriteFile(filepath.Join(staticDir, "real.psafe3"), []byte{}, 0644)
+
+	// Create an outside file and symlink to it
+	outsideDir := t.TempDir()
+	outsideFile := filepath.Join(outsideDir, "evil.psafe3")
+	os.WriteFile(outsideFile, []byte{}, 0644)
+
+	symlinkFile := filepath.Join(staticDir, "linked.psafe3")
+	err := os.Symlink(outsideFile, symlinkFile)
+	if err != nil {
+		t.Skip("cannot create symlinks (may require admin on Windows)")
+	}
+
+	// Create a "provider" dir (recursive scan) with a symlinked directory
+	providerDir := filepath.Join(tmpDir, "onedrive")
+	os.MkdirAll(providerDir, 0755)
+	os.WriteFile(filepath.Join(providerDir, "real2.psafe3"), []byte{}, 0644)
+
+	// Create a symlinked directory pointing outside
+	symlinkDir := filepath.Join(providerDir, "linked_dir")
+	err = os.Symlink(outsideDir, symlinkDir)
+	if err != nil {
+		t.Skip("cannot create symlinks (may require admin on Windows)")
+	}
+
+	service := NewSafeService(tmpDir, 10*1024*1024)
+	safes, err := service.ListSafes()
+	if err != nil {
+		t.Fatalf("ListSafes failed: %v", err)
+	}
+
+	// Should only find real.psafe3 and real2.psafe3, not linked.psafe3 or evil.psafe3
+	for _, safe := range safes {
+		if safe.Name == "linked.psafe3" || safe.Name == "evil.psafe3" {
+			t.Errorf("symlinked file %q should have been skipped", safe.Name)
+		}
+	}
+
+	foundReal := false
+	foundReal2 := false
+	for _, safe := range safes {
+		if safe.Name == "real.psafe3" {
+			foundReal = true
+		}
+		if safe.Name == "real2.psafe3" {
+			foundReal2 = true
+		}
+	}
+	if !foundReal {
+		t.Error("Expected to find real.psafe3")
+	}
+	if !foundReal2 {
+		t.Error("Expected to find real2.psafe3")
+	}
+}
+
+func TestOpenSafe_RejectsOversizedFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	staticDir := filepath.Join(tmpDir, "static")
+	os.MkdirAll(staticDir, 0755)
+
+	// Create a file larger than the limit (limit = 100 bytes)
+	bigContent := make([]byte, 200)
+	os.WriteFile(filepath.Join(staticDir, "big.psafe3"), bigContent, 0644)
+
+	service := NewSafeService(tmpDir, 100)
+
+	_, err := service.openSafe("/data/static/big.psafe3", "password")
+	if err == nil {
+		t.Fatal("Expected error for oversized file")
+	}
+	if !strings.Contains(err.Error(), "exceeds maximum size") {
+		t.Errorf("Expected 'exceeds maximum size' error, got: %v", err)
+	}
+}
+
+func TestOpenSafe_AllowsFileWithinLimit(t *testing.T) {
+	tmpDir := testutil.SetupTestDataDir(t)
+
+	// simple.psafe3 is small, use a large limit
+	service := NewSafeService(tmpDir, 10<<20)
+
+	// This will fail with "failed to unlock safe" (wrong password) but NOT with size error
+	_, err := service.openSafe("/data/static/simple.psafe3", "wrongpassword")
+	if err == nil {
+		t.Fatal("Expected error (wrong password)")
+	}
+	if strings.Contains(err.Error(), "exceeds maximum size") {
+		t.Errorf("Should not get size error for file within limit, got: %v", err)
 	}
 }

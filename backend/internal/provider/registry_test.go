@@ -27,8 +27,8 @@ func (m *mockProvider) ID() string                                              
 func (m *mockProvider) DisplayName() string                                     { return m.displayName }
 func (m *mockProvider) Icon() string                                            { return "" }
 func (m *mockProvider) BrandColor() string                                      { return "" }
-func (m *mockProvider) GetAuthURL(ctx context.Context) (string, error)          { return "", nil }
-func (m *mockProvider) HandleCallback(ctx context.Context, code string, state string) error   { return nil }
+func (m *mockProvider) GetAuthURL(ctx context.Context, sessionID string) (string, error)          { return "", nil }
+func (m *mockProvider) HandleCallback(ctx context.Context, code string, state string, sessionID string) error   { return nil }
 func (m *mockProvider) Disconnect(ctx context.Context) error                    { return nil }
 func (m *mockProvider) GetConnectionStatus(ctx context.Context, attemptRefresh bool) (*ConnectionStatus, error) {
 	return &ConnectionStatus{}, nil

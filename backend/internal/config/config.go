@@ -40,11 +40,22 @@ type RateLimiterConfig struct {
 
 // Settings represents the parsed settings.json file
 type Settings struct {
-	BaseURL      string                    `json:"baseUrl"`
-	SyncInterval string                    `json:"syncInterval"`
-	Auth         *AuthConfig               `json:"auth,omitempty"`
-	RateLimiter  *RateLimiterConfig        `json:"rateLimiter,omitempty"`
-	Providers    map[string]map[string]any `json:"providers"`
+	BaseURL         string                    `json:"baseUrl"`
+	SyncInterval    string                    `json:"syncInterval"`
+	MaxSafeFileSize int64                     `json:"maxSafeFileSize,omitempty"` // bytes, default 10MB
+	Auth            *AuthConfig               `json:"auth,omitempty"`
+	RateLimiter     *RateLimiterConfig        `json:"rateLimiter,omitempty"`
+	TrustedProxies  []string                  `json:"trustedProxies,omitempty"`
+	HSTS            bool                      `json:"hsts,omitempty"`
+	Providers       map[string]map[string]any `json:"providers"`
+}
+
+// GetMaxSafeFileSize returns the configured max safe file size, defaulting to 10MB
+func (s *Settings) GetMaxSafeFileSize() int64 {
+	if s.MaxSafeFileSize > 0 {
+		return s.MaxSafeFileSize
+	}
+	return 10 << 20 // 10MB
 }
 
 // SaveSettings writes settings back to settings.json in the config directory

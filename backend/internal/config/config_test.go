@@ -230,3 +230,20 @@ func TestLoadSettings_InvalidFieldType(t *testing.T) {
 		t.Error("expected error for invalid type in JSON, got nil")
 	}
 }
+
+func TestGetMaxSafeFileSize_Default(t *testing.T) {
+	s := &Settings{}
+	got := s.GetMaxSafeFileSize()
+	expected := int64(10 << 20)
+	if got != expected {
+		t.Errorf("expected default %d, got %d", expected, got)
+	}
+}
+
+func TestGetMaxSafeFileSize_CustomValue(t *testing.T) {
+	s := &Settings{MaxSafeFileSize: 5 * 1024 * 1024}
+	got := s.GetMaxSafeFileSize()
+	if got != 5*1024*1024 {
+		t.Errorf("expected %d, got %d", 5*1024*1024, got)
+	}
+}

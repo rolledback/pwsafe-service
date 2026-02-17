@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -18,6 +17,7 @@ import (
 	"time"
 
 	"github.com/rolledback/pwsafe-service/backend/internal/provider"
+	"github.com/rolledback/pwsafe-service/backend/internal/provider/oauthstate"
 )
 
 const (
@@ -26,7 +26,6 @@ const (
 	msTokenURL         = msAuthority + "/oauth2/v2.0/token"
 	msGraphURL         = "https://graph.microsoft.com/v1.0"
 	onedriveScopes     = "Files.Read User.Read offline_access"
-	codeVerifierMaxAge = 15 * time.Minute
 
 	// OneDrive brand color (Microsoft blue)
 	onedriveBrandColor = "#0078D4"
@@ -46,10 +45,12 @@ type tokens struct {
 
 // OneDriveProvider implements provider.SyncableSafesProvider
 type OneDriveProvider struct {
+	id          string // provider ID for store keying
 	storageDir  string // The provider's directory (e.g., {safesDir}/onedrive)
 	clientID    string
 	redirectURI string
 	tokenMutex  sync.Mutex
+	oauthStore  *oauthstate.Store
 }
 
 // Factory creates an OneDriveProvider from the settings.json providers config
@@ -59,36 +60,41 @@ func Factory(providerID string, dataDir string, baseURL string, providerConfig m
 		return nil, fmt.Errorf("clientId is required for onedrive provider")
 	}
 
+	store, _ := providerConfig["oauthStore"].(*oauthstate.Store)
+	if store == nil {
+		return nil, fmt.Errorf("oauthStore is required for onedrive provider")
+	}
+
 	// Callback URL derived from baseURL + fixed path
 	redirectURI := strings.TrimSuffix(baseURL, "/") + "/api/providers/onedrive/auth/callback"
 
 	// Storage dir is dataDir/{providerID}
 	storageDir := filepath.Join(dataDir, providerID)
 
-	return NewOneDriveProvider(storageDir, clientID, redirectURI)
+	return NewOneDriveProvider(providerID, storageDir, clientID, redirectURI, store)
 }
 
 // NewOneDriveProvider creates a new OneDrive provider
 // storageDir is the provider's directory where tokens and data are stored
-func NewOneDriveProvider(storageDir, clientID, redirectURI string) (*OneDriveProvider, error) {
+func NewOneDriveProvider(id, storageDir, clientID, redirectURI string, oauthStore *oauthstate.Store) (*OneDriveProvider, error) {
 	p := &OneDriveProvider{
+		id:          id,
 		storageDir:  storageDir,
 		clientID:    clientID,
 		redirectURI: redirectURI,
+		oauthStore:  oauthStore,
 	}
 	// Auto-create data folder
 	if err := p.ensureStorageDir(); err != nil {
 		return nil, fmt.Errorf("failed to create provider data directory: %w", err)
 	}
-	// Clean up any stale code verifier from previous runs
-	p.cleanupStaleCodeVerifier()
 	return p, nil
 }
 
 // ============ IDENTITY (2 methods) ============
 
 func (p *OneDriveProvider) ID() string {
-	return "onedrive"
+	return p.id
 }
 
 func (p *OneDriveProvider) DisplayName() string {
@@ -107,7 +113,7 @@ func (p *OneDriveProvider) BrandColor() string {
 
 // ============ AUTH (4 methods) ============
 
-func (p *OneDriveProvider) GetAuthURL(ctx context.Context) (string, error) {
+func (p *OneDriveProvider) GetAuthURL(ctx context.Context, sessionID string) (string, error) {
 	if p.clientID == "" {
 		return "", fmt.Errorf("OneDrive client ID not configured")
 	}
@@ -127,13 +133,12 @@ func (p *OneDriveProvider) GetAuthURL(ctx context.Context) (string, error) {
 	}
 	state := base64.URLEncoding.EncodeToString(stateBytes)
 
-	// Store code verifier and state for later use in callback
-	if err := p.storeCodeVerifier(codeVerifier); err != nil {
-		return "", fmt.Errorf("failed to store code verifier: %w", err)
-	}
-	if err := p.storeOAuthState(state); err != nil {
-		return "", fmt.Errorf("failed to store OAuth state: %w", err)
-	}
+	// Store state and code verifier in memory keyed by session+provider
+	p.oauthStore.Put(sessionID, p.id, &oauthstate.StateEntry{
+		State:        state,
+		CodeVerifier: codeVerifier,
+		CreatedAt:    time.Now(),
+	})
 
 	params := url.Values{
 		"client_id":             {p.clientID},
@@ -149,26 +154,24 @@ func (p *OneDriveProvider) GetAuthURL(ctx context.Context) (string, error) {
 	return msAuthorizeURL + "?" + params.Encode(), nil
 }
 
-func (p *OneDriveProvider) HandleCallback(ctx context.Context, code string, state string) error {
+func (p *OneDriveProvider) HandleCallback(ctx context.Context, code string, state string, sessionID string) error {
 	if p.clientID == "" {
 		return fmt.Errorf("OneDrive client ID not configured")
 	}
 
-	// Validate OAuth state parameter (CSRF protection)
-	expectedState, err := p.loadOAuthState()
-	if err != nil {
-		return fmt.Errorf("failed to load OAuth state: %w", err)
+	// Load state entry from in-memory store
+	entry, ok := p.oauthStore.Get(sessionID, p.id)
+	if !ok {
+		return fmt.Errorf("no OAuth state found for this session")
 	}
-	if state != expectedState {
-		p.deleteOAuthState()
+
+	// Validate OAuth state parameter (CSRF protection)
+	// On mismatch, return error but do NOT delete — prevents DoS
+	if state != entry.State {
 		return fmt.Errorf("OAuth state mismatch")
 	}
 
-	// Retrieve code verifier
-	codeVerifier, err := p.loadCodeVerifier()
-	if err != nil {
-		return fmt.Errorf("failed to load code verifier: %w", err)
-	}
+	codeVerifier := entry.CodeVerifier
 
 	// Exchange code for tokens
 	newTokens, err := p.exchangeCodeForTokens(ctx, code, codeVerifier)
@@ -191,9 +194,8 @@ func (p *OneDriveProvider) HandleCallback(ctx context.Context, code string, stat
 		return fmt.Errorf("failed to store tokens: %w", err)
 	}
 
-	// Clean up code verifier and OAuth state
-	p.deleteCodeVerifier()
-	p.deleteOAuthState()
+	// Clean up state entry on success
+	p.oauthStore.Delete(sessionID, p.id)
 
 	return nil
 }
@@ -203,8 +205,6 @@ func (p *OneDriveProvider) Disconnect(ctx context.Context) error {
 	if err := os.Remove(p.tokensPath()); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	// Delete code verifier if exists
-	p.deleteCodeVerifier()
 	return nil
 }
 
@@ -266,6 +266,7 @@ func (p *OneDriveProvider) ListRemoteFiles(ctx context.Context) ([]provider.Remo
 		Value []struct {
 			ID              string `json:"id"`
 			Name            string `json:"name"`
+			Size            int64  `json:"size"`
 			ParentReference struct {
 				Path string `json:"path"`
 			} `json:"parentReference"`
@@ -300,6 +301,7 @@ func (p *OneDriveProvider) ListRemoteFiles(ctx context.Context) ([]provider.Remo
 			ID:   item.ID,
 			Name: item.Name,
 			Path: path,
+			Size: item.Size,
 		})
 	}
 
@@ -337,38 +339,8 @@ func (p *OneDriveProvider) tokensPath() string {
 	return filepath.Join(p.storageDir, ".tokens.json")
 }
 
-func (p *OneDriveProvider) codeVerifierPath() string {
-	return filepath.Join(p.storageDir, ".code_verifier")
-}
-
-func (p *OneDriveProvider) oauthStatePath() string {
-	return filepath.Join(p.storageDir, ".oauth_state")
-}
-
 func (p *OneDriveProvider) ensureStorageDir() error {
 	return os.MkdirAll(p.storageDir, 0700)
-}
-
-// storeStateFile writes content to a state file in the storage directory
-func (p *OneDriveProvider) storeStateFile(path, content string) error {
-	if err := p.ensureStorageDir(); err != nil {
-		return err
-	}
-	return os.WriteFile(path, []byte(content), 0600)
-}
-
-// loadStateFile reads content from a state file
-func (p *OneDriveProvider) loadStateFile(path string) (string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
-// deleteStateFile removes a state file
-func (p *OneDriveProvider) deleteStateFile(path string) {
-	os.Remove(path)
 }
 
 // doAuthRequest performs an authenticated HTTP request with the given access token
@@ -587,56 +559,6 @@ func (p *OneDriveProvider) getUserProfile(ctx context.Context, accessToken strin
 	}
 
 	return profile.DisplayName, email, nil
-}
-
-func (p *OneDriveProvider) storeCodeVerifier(verifier string) error {
-	return p.storeStateFile(p.codeVerifierPath(), verifier)
-}
-
-func (p *OneDriveProvider) loadCodeVerifier() (string, error) {
-	verifierPath := p.codeVerifierPath()
-
-	// Check file age before reading
-	stat, err := os.Stat(verifierPath)
-	if err != nil {
-		return "", err
-	}
-
-	if time.Since(stat.ModTime()) > codeVerifierMaxAge {
-		os.Remove(verifierPath)
-		return "", fmt.Errorf("code verifier expired")
-	}
-
-	return p.loadStateFile(verifierPath)
-}
-
-func (p *OneDriveProvider) deleteCodeVerifier() {
-	p.deleteStateFile(p.codeVerifierPath())
-}
-
-func (p *OneDriveProvider) storeOAuthState(state string) error {
-	return p.storeStateFile(p.oauthStatePath(), state)
-}
-
-func (p *OneDriveProvider) loadOAuthState() (string, error) {
-	return p.loadStateFile(p.oauthStatePath())
-}
-
-func (p *OneDriveProvider) deleteOAuthState() {
-	p.deleteStateFile(p.oauthStatePath())
-}
-
-// cleanupStaleCodeVerifier removes any expired code verifier from previous runs
-func (p *OneDriveProvider) cleanupStaleCodeVerifier() {
-	verifierPath := p.codeVerifierPath()
-	stat, err := os.Stat(verifierPath)
-	if err != nil {
-		return // File doesn't exist
-	}
-	if time.Since(stat.ModTime()) > codeVerifierMaxAge {
-		os.Remove(verifierPath)
-		log.Printf("OneDrive: cleaned up stale code verifier")
-	}
 }
 
 // ============ PKCE HELPERS ============

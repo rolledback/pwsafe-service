@@ -18,15 +18,24 @@ func isSafeFile(name string) bool {
 
 // validatePathWithinBase validates that the given path resolves within the base directory
 // and returns the absolute path if valid. Returns an error if path traversal is detected.
+// Uses EvalSymlinks to resolve symlinks before checking containment.
 func validatePathWithinBase(path, base string) (string, error) {
-	absPath, err := filepath.Abs(path)
+	absPath, err := filepath.EvalSymlinks(path)
 	if err != nil {
-		return "", fmt.Errorf("invalid path: %w", err)
+		// File doesn't exist yet - resolve the parent directory
+		// Walk up until we find an existing ancestor, then append remaining components
+		absPath, err = resolveWithExistingAncestor(path)
+		if err != nil {
+			return "", fmt.Errorf("invalid path: %w", err)
+		}
 	}
 
-	absBase, err := filepath.Abs(base)
+	absBase, err := filepath.EvalSymlinks(base)
 	if err != nil {
-		return "", fmt.Errorf("invalid base directory: %w", err)
+		absBase, err = filepath.Abs(base)
+		if err != nil {
+			return "", fmt.Errorf("invalid base directory: %w", err)
+		}
 	}
 
 	absPath = filepath.Clean(absPath)
@@ -46,4 +55,35 @@ func validatePathWithinBase(path, base string) (string, error) {
 	}
 
 	return absPath, nil
+}
+
+// resolveWithExistingAncestor resolves symlinks on the closest existing ancestor
+// and appends the remaining path components. This prevents symlink attacks where
+// a symlinked directory component would escape the containment check.
+func resolveWithExistingAncestor(path string) (string, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+
+	// Walk up the path to find the closest existing ancestor
+	current := absPath
+	var remaining []string
+	for {
+		resolved, err := filepath.EvalSymlinks(current)
+		if err == nil {
+			// Found existing ancestor - append remaining components
+			for i := len(remaining) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, remaining[i])
+			}
+			return filepath.Clean(resolved), nil
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			// Reached root without finding existing path
+			return absPath, nil
+		}
+		remaining = append(remaining, filepath.Base(current))
+		current = parent
+	}
 }

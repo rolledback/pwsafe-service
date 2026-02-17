@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -634,5 +635,101 @@ func TestNewAuthService_BcryptCostUsedInSetup(t *testing.T) {
 	_, err = svc.Login("testpass", "127.0.0.1")
 	if err != nil {
 		t.Fatalf("Login failed with custom bcrypt cost: %v", err)
+	}
+}
+
+func TestPasswordTruncation_72Bytes(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	// Create a 100-byte password; bcrypt only uses first 72 bytes
+	longPass := strings.Repeat("a", 100)
+	first72 := longPass[:72]
+
+	if err := svc.Setup("enabled", longPass); err != nil {
+		t.Fatalf("Setup failed: %v", err)
+	}
+
+	// Login with only the first 72 bytes should succeed
+	_, err := svc.Login(first72, "127.0.0.1")
+	if err != nil {
+		t.Fatalf("Login with first 72 bytes should succeed: %v", err)
+	}
+
+	// Login with the full 100-byte password should also succeed (truncated to 72)
+	_, err = svc.Login(longPass, "127.0.0.1")
+	if err != nil {
+		t.Fatalf("Login with full 100-byte password should succeed: %v", err)
+	}
+}
+
+func TestBcryptCost_15_CappedToDefault(t *testing.T) {
+	dataDir := t.TempDir()
+	configDir := t.TempDir()
+	os.WriteFile(filepath.Join(configDir, "settings.json"), []byte("{}"), 0644)
+
+	settings := &config.Settings{
+		Auth: &config.AuthConfig{BcryptCost: 15},
+	}
+	svc := NewAuthService(dataDir, configDir, settings)
+
+	if svc.GetBcryptCost() != defaultBcryptCost {
+		t.Errorf("expected bcrypt cost %d for value 15 (above cap), got %d", defaultBcryptCost, svc.GetBcryptCost())
+	}
+}
+
+func TestClearAllSessions(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	svc.Setup("enabled", "pass")
+
+	// Create multiple sessions
+	svc.Login("pass", "10.0.0.1")
+	svc.Login("pass", "10.0.0.2")
+	svc.Login("pass", "10.0.0.3")
+
+	if svc.SessionCount() != 3 {
+		t.Fatalf("expected 3 sessions, got %d", svc.SessionCount())
+	}
+
+	svc.ClearAllSessions()
+
+	if svc.SessionCount() != 0 {
+		t.Errorf("expected 0 sessions after ClearAllSessions, got %d", svc.SessionCount())
+	}
+}
+
+func TestSessionTimeout_CappedToMaxLifetime(t *testing.T) {
+	dataDir := t.TempDir()
+	configDir := t.TempDir()
+	os.WriteFile(filepath.Join(configDir, "settings.json"), []byte("{}"), 0644)
+
+	settings := &config.Settings{
+		Auth: &config.AuthConfig{
+			SessionTimeout:     "1h",
+			MaxSessionLifetime: "5m",
+		},
+	}
+	svc := NewAuthService(dataDir, configDir, settings)
+
+	if svc.GetSessionTimeout() != 5*time.Minute {
+		t.Errorf("expected sessionTimeout capped to 5m, got %s", svc.GetSessionTimeout())
+	}
+}
+
+func TestLogin_MissingHashFile_NoPanic(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	// Don't call Setup — no hash file exists
+	svc.mu.Lock()
+	if svc.settings.Auth == nil {
+		svc.settings.Auth = &config.AuthConfig{}
+	}
+	svc.settings.Auth.Mode = "enabled"
+	svc.mu.Unlock()
+
+	// Should not panic and should return "invalid credentials"
+	_, err := svc.Login("anypass", "127.0.0.1")
+	if err == nil {
+		t.Fatal("expected error when hash file is missing")
+	}
+	if err.Error() != "invalid credentials" {
+		t.Errorf("expected 'invalid credentials', got %q", err.Error())
 	}
 }

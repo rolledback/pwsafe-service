@@ -7,7 +7,7 @@ import (
 )
 
 // RequireAuth middleware checks authentication based on the current mode
-func RequireAuth(authService *auth.AuthService, next http.HandlerFunc) http.HandlerFunc {
+func RequireAuth(authService *auth.AuthService, trustedProxies []string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		mode := authService.GetMode()
 		switch mode {
@@ -24,7 +24,7 @@ func RequireAuth(authService *auth.AuthService, next http.HandlerFunc) http.Hand
 				return
 			}
 
-			ip := GetClientIP(r)
+			ip := GetClientIP(r, trustedProxies)
 			sessionID := auth.GetSessionIDFromRequest(r)
 			if sessionID == "" || !authService.ValidateSession(sessionID, ip) {
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)

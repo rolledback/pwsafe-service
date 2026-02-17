@@ -17,10 +17,11 @@ type visitor struct {
 }
 
 type RateLimiter struct {
-	visitors map[string]*visitor
-	mu       sync.Mutex
-	rate     rate.Limit
-	burst    int
+	visitors       map[string]*visitor
+	mu             sync.Mutex
+	rate           rate.Limit
+	burst          int
+	trustedProxies []string
 }
 
 // RateLimiters holds all rate limiter tiers.
@@ -71,7 +72,7 @@ func resolveTier(cfg *config.RateLimiterConfig, tier string) (rate.Limit, int) {
 }
 
 // NewRateLimiters creates all rate limiter tiers from config, using defaults for any unconfigured tier.
-func NewRateLimiters(ctx context.Context, cfg *config.RateLimiterConfig) *RateLimiters {
+func NewRateLimiters(ctx context.Context, cfg *config.RateLimiterConfig, trustedProxies []string) *RateLimiters {
 	stdRate, stdBurst := resolveTier(cfg, "standard")
 	strictRate, strictBurst := resolveTier(cfg, "strict")
 	webRate, webBurst := resolveTier(cfg, "web")
@@ -80,21 +81,28 @@ func NewRateLimiters(ctx context.Context, cfg *config.RateLimiterConfig) *RateLi
 		float64(stdRate), stdBurst, float64(strictRate), strictBurst, float64(webRate), webBurst)
 
 	return &RateLimiters{
-		Standard: NewRateLimiter(ctx, stdRate, stdBurst),
-		Strict:   NewRateLimiter(ctx, strictRate, strictBurst),
-		Web:      NewRateLimiter(ctx, webRate, webBurst),
+		Standard: NewRateLimiter(ctx, stdRate, stdBurst, trustedProxies),
+		Strict:   NewRateLimiter(ctx, strictRate, strictBurst, trustedProxies),
+		Web:      NewRateLimiter(ctx, webRate, webBurst, trustedProxies),
 	}
 }
 
-func NewRateLimiter(ctx context.Context, r rate.Limit, b int) *RateLimiter {
+func NewRateLimiter(ctx context.Context, r rate.Limit, b int, trustedProxies []string) *RateLimiter {
 	rl := &RateLimiter{
-		visitors: make(map[string]*visitor),
-		rate:     r,
-		burst:    b,
+		visitors:       make(map[string]*visitor),
+		rate:           r,
+		burst:          b,
+		trustedProxies: trustedProxies,
 	}
 	go rl.cleanup(ctx)
 	return rl
 }
+
+// maxVisitors is the hard cap on the visitor map size to prevent memory exhaustion.
+const maxVisitors = 10_000
+
+// denyLimiter is a pre-allocated limiter that always denies requests.
+var denyLimiter = rate.NewLimiter(0, 0)
 
 func (rl *RateLimiter) getVisitor(ip string) *rate.Limiter {
 	rl.mu.Lock()
@@ -102,6 +110,9 @@ func (rl *RateLimiter) getVisitor(ip string) *rate.Limiter {
 
 	v, exists := rl.visitors[ip]
 	if !exists {
+		if len(rl.visitors) >= maxVisitors {
+			return denyLimiter
+		}
 		v = &visitor{
 			limiter:  rate.NewLimiter(rl.rate, rl.burst),
 			lastSeen: time.Now(),
@@ -136,7 +147,7 @@ func (rl *RateLimiter) cleanup(ctx context.Context) {
 
 func (rl *RateLimiter) Limit(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ip := GetClientIP(r)
+		ip := GetClientIP(r, rl.trustedProxies)
 
 		limiter := rl.getVisitor(ip)
 		if !limiter.Allow() {

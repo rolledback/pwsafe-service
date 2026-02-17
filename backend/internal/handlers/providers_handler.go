@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/rolledback/pwsafe-service/backend/internal/auth"
 	"github.com/rolledback/pwsafe-service/backend/internal/models"
 	"github.com/rolledback/pwsafe-service/backend/internal/service"
 )
@@ -118,7 +119,7 @@ func (h *ProvidersHandler) getAuthURL(w http.ResponseWriter, r *http.Request, sv
 		return
 	}
 
-	authURL, err := svc.Provider().GetAuthURL(r.Context())
+	authURL, err := svc.Provider().GetAuthURL(r.Context(), auth.GetSessionIDFromRequest(r))
 	if err != nil {
 		log.Printf("Error getting %s auth URL: %v", providerID, err)
 		h.respondError(w, "Failed to get auth URL", http.StatusInternalServerError)
@@ -145,7 +146,8 @@ func (h *ProvidersHandler) handleCallback(w http.ResponseWriter, r *http.Request
 	}
 
 	state := r.URL.Query().Get("state")
-	if err := svc.Provider().HandleCallback(r.Context(), code, state); err != nil {
+	sessionID := auth.GetSessionIDFromRequest(r)
+	if err := svc.Provider().HandleCallback(r.Context(), code, state, sessionID); err != nil {
 		log.Printf("Error handling %s callback: %v", providerID, err)
 		http.Redirect(w, r, "/web/add/"+providerID+"?error=token_exchange_failed", http.StatusFound)
 		return
