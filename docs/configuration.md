@@ -33,7 +33,7 @@ Example:
 
 ## Authentication (`auth`)
 
-The `auth` block is added for you on first run through the web UI. If you'd like to change the service's authentication or change your password, remove the `auth` block from `settings.json` and restart the service. See the [User Guide](user.md) for more information on auth modes.
+The `auth` block is added for you on first run through the web UI. If you'd like to change the service's authentication or change your password, remove the `auth` block from `settings.json` and restart the service. See the [User Guide](user.md#set-up-authentication) for more information on authentication setup.
 
 | Field | Type | Default | Valid Range | Description |
 |---|---|---|---|---|
@@ -59,7 +59,7 @@ Example:
 
 ## Rate Limiting (`rateLimiter`)
 
-Rate limiting is per-IP and split into three tiers. Each tier has a `rate` (requests per second) and `burst` (burst capacity). If omitted, defaults are used. Invalid values (rate ≤ 0 or burst < 1) fall back to defaults with a warning.
+Rate limiting is per-IP and split into three tiers. Each tier has a `rate` (requests per second) and `burst` (burst capacity).
 
 | Field | Type | Default | Valid Range | Description |
 |---|---|---|---|---|
@@ -111,35 +111,6 @@ Example:
   "providers": {
     "some-provider": {
       "provider-setting": "setting-value"
-    }
-  }
-}
-```
-
-## Full Example
-
-```json
-{
-  "baseUrl": "https://pwsafe.example.com",
-  "syncInterval": "30m",
-  "maxSafeFileSize": 5242880,
-  "auth": {
-    "mode": "enabled",
-    "sessionTimeout": "5m",
-    "bcryptCost": 12,
-    "maxSessions": 8,
-    "maxSessionLifetime": "1h"
-  },
-  "rateLimiter": {
-    "standard": { "rate": 10, "burst": 20 },
-    "strict": { "rate": 0.5, "burst": 3 },
-    "web": { "rate": 100, "burst": 200 }
-  },
-  "trustedProxies": ["172.17.0.1"],
-  "hsts": true,
-  "providers": {
-    "onedrive": {
-      "clientId": "your-client-id-here"
     }
   }
 }

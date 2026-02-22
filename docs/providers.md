@@ -4,7 +4,7 @@ Providers allow pwsafe-service to sync password safes from remote sources (e.g. 
 
 ## Getting Started
 
-To use any provider, you will need a settings file in your config directory. For providers, you at least need:
+To use any provider, you will initially need to add `baseUrl` and `providers` to your [settings file](configuration.md):
 
 ```json
 {
@@ -13,14 +13,14 @@ To use any provider, you will need a settings file in your config directory. For
 }
 ```
 
-- **baseUrl**: The full URL (protocol, hostname, optional port) you use to access pwsafe-service. This is used to construct OAuth callback URLs during authentication.
-- **providers**: A map of provider configurations. Add entries here as you configure each provider.
+- `baseUrl`: The full URL (protocol, hostname, optional port) you use to access pwsafe-service. This is used to construct OAuth callback URLs during authentication.
+- `providers`: A map of provider configurations. Add entries here as you configure each provider.
 
 ## OneDrive
 
 ### Prerequisites
 
-You'll need to register an application in the Microsoft Azure portal to get a Client ID.
+- Azure account
 
 ### Step 1: Register an Azure Application
 
@@ -58,7 +58,7 @@ Update `"providers"` in your `settings.json` to include:
 }
 ```
 
-- **clientId**: The Application (client) ID from Step 1.6
+- `clientId`: The Application (client) ID from Step 1.6
 
 ### Step 4: Connect Your Account
 

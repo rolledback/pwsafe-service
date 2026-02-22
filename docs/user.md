@@ -31,7 +31,7 @@ The service uses two volume mounts:
 | `/config` | Configuration files |
 | `/data` | Safe files and other data |
 
-You should have separate directories for both. For local only usage, there are no installation steps required for either directory. To configure for remote safes usage, see [Providers](providers.md) for setup instructions.
+It is recommended to have separate directories for both.
 
 ### Docker Compose
 
@@ -68,7 +68,7 @@ Regardless of which choice you make, you'll always have to enter the password fo
 
 ### Changing Authentication or Resetting Your Password
 
-Remove the `auth` block from your settings file and restart the service. You will again be prompted to set up authentication the next time you open the web UI in your browser.
+Remove the `auth.mode` field from your [settings file](configuration.md) and restart the service. You will again be prompted to set up authentication the next time you open the web UI in your browser.
 
 ### Additional Authentication Settings
 
