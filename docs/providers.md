@@ -4,7 +4,7 @@ Providers allow pwsafe-service to sync password safes from remote sources (e.g. 
 
 ## Getting Started
 
-To use any provider, you will need a `settings.json` file in your config directory. Start with this template:
+To use any provider, you will need a settings file in your config directory. For providers, you at least need:
 
 ```json
 {
@@ -41,7 +41,9 @@ You can add additional redirect URIs as needed. For example, for local developme
 1. In your app registration, go to **API permissions**
 2. Click **Add a permission** → **Microsoft Graph** → **Delegated permissions**
 3. Add these permissions:
+   - `Files.Read`
    - `User.Read`
+   - `offline_access`
 4. Click **Add permissions**
 
 ### Step 3: Configure pwsafe-service

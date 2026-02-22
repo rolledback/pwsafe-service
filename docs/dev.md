@@ -23,7 +23,7 @@ The easiest way to run the full stack locally is with the e2e dev scripts:
 ./e2e-dev.sh
 ```
 
-Copy the `.example` e2e dev scripts and configure as needed. These scripts start both the backend and frontend with appropriate environment variables.
+Copy the `.example` e2e dev scripts and configure as needed. These scripts build the backend and frontend, and then start the backend which serves the compiled frontend.
 
 **Note:** The scripts do not install dependencies. Run `go mod download` in `backend/` and `npm install` in `frontend/` first. 
 
@@ -36,11 +36,15 @@ For detailed instructions on developing each component:
 
 ### Working with Providers
 
-To develop existing providers or add new ones, see [Providers](providers.md) as a primer. When changing or adding new providers, you must update that documentation. If you are unable to setup any of the currently supported providers, you can enable a mock provider by updating `"providers"` in your `settings.json` to include:
+To develop existing providers or add new ones, see [Providers](providers.md) as a primer. When changing or adding new providers, you must update that documentation.
+
+If you are unable to set up any of the currently supported providers, you can enable a mock provider by updating the [providers block](configuration.md#providers-providers) in your settings file to include:
 
 ```json
 {
-  "mock": {}
+  "providers": {
+    "mock": {}
+  }
 }
 ```
 
