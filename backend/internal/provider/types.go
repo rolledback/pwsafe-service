@@ -1,6 +1,10 @@
 package provider
 
-import "time"
+import (
+	"time"
+
+	"github.com/rolledback/pwsafe-service/backend/internal/provider/oauthstate"
+)
 
 // RemoteFile represents a file discovered on a remote storage provider
 type RemoteFile struct {
@@ -24,4 +28,5 @@ type ConnectionStatus struct {
 // dataDir: base data directory (provider creates its subfolder)
 // baseURL: from settings.json, used to construct callback URL
 // providerConfig: provider-specific config from settings.json providers map
-type ProviderFactory func(providerID string, dataDir string, baseURL string, providerConfig map[string]any) (SyncableSafesProvider, error)
+// oauthStore: shared in-memory OAuth state store for CSRF/PKCE during auth flows
+type ProviderFactory func(providerID string, dataDir string, baseURL string, providerConfig map[string]any, oauthStore *oauthstate.Store) (SyncableSafesProvider, error)

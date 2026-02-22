@@ -57,18 +57,13 @@ func main() {
 	// Create OAuth state store
 	oauthStore := oauthstate.NewStore(10 * time.Minute)
 
-	// Inject oauthStore into each provider's config
-	for _, providerConfig := range settings.Providers {
-		providerConfig["oauthStore"] = oauthStore
-	}
-
 	// Create provider registry and register factories
 	registry := provider.NewRegistry()
 	registry.Register("onedrive", onedrive.Factory)
 	registry.Register("mock", mock.Factory)
 
 	// Discover providers from settings
-	providers, err := registry.Discover(settings, cfg.DataDirectory)
+	providers, err := registry.Discover(settings, cfg.DataDirectory, oauthStore)
 	if err != nil {
 		log.Fatalf("Failed to discover providers: %v", err)
 	}

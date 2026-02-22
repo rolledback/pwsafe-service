@@ -54,14 +54,13 @@ type OneDriveProvider struct {
 }
 
 // Factory creates an OneDriveProvider from the settings.json providers config
-func Factory(providerID string, dataDir string, baseURL string, providerConfig map[string]any) (provider.SyncableSafesProvider, error) {
+func Factory(providerID string, dataDir string, baseURL string, providerConfig map[string]any, oauthStore *oauthstate.Store) (provider.SyncableSafesProvider, error) {
 	clientID, ok := providerConfig["clientId"].(string)
 	if !ok || clientID == "" {
 		return nil, fmt.Errorf("clientId is required for onedrive provider")
 	}
 
-	store, _ := providerConfig["oauthStore"].(*oauthstate.Store)
-	if store == nil {
+	if oauthStore == nil {
 		return nil, fmt.Errorf("oauthStore is required for onedrive provider")
 	}
 
@@ -71,7 +70,7 @@ func Factory(providerID string, dataDir string, baseURL string, providerConfig m
 	// Storage dir is dataDir/{providerID}
 	storageDir := filepath.Join(dataDir, providerID)
 
-	return NewOneDriveProvider(providerID, storageDir, clientID, redirectURI, store)
+	return NewOneDriveProvider(providerID, storageDir, clientID, redirectURI, oauthStore)
 }
 
 // NewOneDriveProvider creates a new OneDrive provider

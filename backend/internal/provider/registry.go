@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"github.com/rolledback/pwsafe-service/backend/internal/config"
+	"github.com/rolledback/pwsafe-service/backend/internal/provider/oauthstate"
 )
 
 // Registry manages provider discovery and creation
@@ -25,7 +26,7 @@ func (r *Registry) Register(providerID string, factory ProviderFactory) {
 
 // Discover creates providers based on the settings.json providers map.
 // Returns map of providerID -> SyncableSafesProvider for successfully created providers.
-func (r *Registry) Discover(settings *config.Settings, dataDir string) (map[string]SyncableSafesProvider, error) {
+func (r *Registry) Discover(settings *config.Settings, dataDir string, oauthStore *oauthstate.Store) (map[string]SyncableSafesProvider, error) {
 	providers := make(map[string]SyncableSafesProvider)
 
 	if settings.Providers == nil {
@@ -42,7 +43,7 @@ func (r *Registry) Discover(settings *config.Settings, dataDir string) (map[stri
 		}
 
 		// Create the provider
-		provider, err := factory(providerID, dataDir, settings.BaseURL, providerConfig)
+		provider, err := factory(providerID, dataDir, settings.BaseURL, providerConfig, oauthStore)
 		if err != nil {
 			log.Printf("Warning: failed to create %s provider: %v", providerID, err)
 			continue

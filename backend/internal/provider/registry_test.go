@@ -6,10 +6,11 @@ import (
 	"testing"
 
 	"github.com/rolledback/pwsafe-service/backend/internal/config"
+	"github.com/rolledback/pwsafe-service/backend/internal/provider/oauthstate"
 )
 
 // mockFactory creates a simple mock provider for testing
-func mockFactory(providerID string, dataDir string, baseURL string, providerConfig map[string]any) (SyncableSafesProvider, error) {
+func mockFactory(providerID string, dataDir string, baseURL string, providerConfig map[string]any, _ *oauthstate.Store) (SyncableSafesProvider, error) {
 	return &mockProvider{
 		id:          providerID,
 		displayName: "Mock " + providerID,
@@ -51,7 +52,7 @@ func TestRegistry_Discover_ValidSettings(t *testing.T) {
 	registry := NewRegistry()
 	registry.Register("testprovider", mockFactory)
 
-	providers, err := registry.Discover(settings, tmpDir)
+	providers, err := registry.Discover(settings, tmpDir, nil)
 	if err != nil {
 		t.Fatalf("Discover failed: %v", err)
 	}
@@ -76,7 +77,7 @@ func TestRegistry_Discover_NoProviders(t *testing.T) {
 	registry := NewRegistry()
 	registry.Register("testprovider", mockFactory)
 
-	providers, err := registry.Discover(settings, tmpDir)
+	providers, err := registry.Discover(settings, tmpDir, nil)
 	if err != nil {
 		t.Fatalf("Discover should not fail: %v", err)
 	}
@@ -97,14 +98,14 @@ func TestRegistry_Discover_FactoryError(t *testing.T) {
 	}
 
 	// Use a factory that returns an error
-	failingFactory := func(providerID string, dataDir string, baseURL string, providerConfig map[string]any) (SyncableSafesProvider, error) {
+	failingFactory := func(providerID string, dataDir string, baseURL string, providerConfig map[string]any, _ *oauthstate.Store) (SyncableSafesProvider, error) {
 		return nil, errors.New("factory error")
 	}
 
 	registry := NewRegistry()
 	registry.Register("testprovider", failingFactory)
 
-	providers, err := registry.Discover(settings, tmpDir)
+	providers, err := registry.Discover(settings, tmpDir, nil)
 	if err != nil {
 		t.Fatalf("Discover should not fail on factory error: %v", err)
 	}
@@ -127,7 +128,7 @@ func TestRegistry_Discover_UnknownProvider(t *testing.T) {
 	registry := NewRegistry()
 	// Don't register unknownprovider
 
-	providers, err := registry.Discover(settings, tmpDir)
+	providers, err := registry.Discover(settings, tmpDir, nil)
 	if err != nil {
 		t.Fatalf("Discover should not fail: %v", err)
 	}
@@ -152,7 +153,7 @@ func TestRegistry_Discover_MultipleProviders(t *testing.T) {
 	registry.Register("provider1", mockFactory)
 	registry.Register("provider2", mockFactory)
 
-	providers, err := registry.Discover(settings, tmpDir)
+	providers, err := registry.Discover(settings, tmpDir, nil)
 	if err != nil {
 		t.Fatalf("Discover failed: %v", err)
 	}
@@ -175,15 +176,15 @@ func TestRegistry_Discover_BaseURLPassedToFactory(t *testing.T) {
 	}
 
 	var capturedBaseURL string
-	capturingFactory := func(providerID string, dataDir string, baseURL string, providerConfig map[string]any) (SyncableSafesProvider, error) {
+	capturingFactory := func(providerID string, dataDir string, baseURL string, providerConfig map[string]any, oauthStore *oauthstate.Store) (SyncableSafesProvider, error) {
 		capturedBaseURL = baseURL
-		return mockFactory(providerID, dataDir, baseURL, providerConfig)
+		return mockFactory(providerID, dataDir, baseURL, providerConfig, oauthStore)
 	}
 
 	registry := NewRegistry()
 	registry.Register("testprovider", capturingFactory)
 
-	_, err := registry.Discover(settings, tmpDir)
+	_, err := registry.Discover(settings, tmpDir, nil)
 	if err != nil {
 		t.Fatalf("Discover failed: %v", err)
 	}

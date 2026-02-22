@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rolledback/pwsafe-service/backend/internal/provider"
+	"github.com/rolledback/pwsafe-service/backend/internal/provider/oauthstate"
 )
 
 const (
@@ -26,7 +27,7 @@ const (
 
 // Factory creates a mock provider from the settings.json providers config.
 // It scans the testdata/ directory for .psafe3 files and serves them.
-func Factory(providerID string, dataDir string, baseURL string, providerConfig map[string]any) (provider.SyncableSafesProvider, error) {
+func Factory(providerID string, dataDir string, baseURL string, providerConfig map[string]any, _ *oauthstate.Store) (provider.SyncableSafesProvider, error) {
 	// Build callback URL from baseURL
 	callbackURL := strings.TrimSuffix(baseURL, "/") + "/api/providers/" + providerID + "/auth/callback"
 
