@@ -131,6 +131,9 @@ func main() {
 	// API routes — declarative middleware via Route structs
 	mux := http.NewServeMux()
 	middleware.RegisterRoutes(mux, []middleware.Route{
+		// Health check (no auth, no CSRF)
+		{Pattern: "/api/health", Handler: handlers.HealthCheck, Method: http.MethodGet},
+
 		// Auth routes (no RequireAuth)
 		{Pattern: "/api/auth/status", Handler: authHandler.Status, Method: http.MethodGet},
 		{Pattern: "/api/auth/setup", Handler: authHandler.Setup, Csrf: true, Limiter: limiters.Strict, Method: http.MethodPost},

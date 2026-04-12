@@ -6,7 +6,13 @@ services:
       - "8080:8080"
     volumes:
       # User-provided data
-      - /opt/pwsafe/config:/config:ro
+      - /opt/pwsafe/config:/config
       # Service-managed data
       - /opt/pwsafe/data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
     restart: unless-stopped

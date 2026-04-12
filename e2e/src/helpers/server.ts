@@ -170,7 +170,7 @@ export class ServerInstance {
 
     while (Date.now() - start < timeoutMs) {
       try {
-        const resp = await fetch(`${this.baseUrl}/web/`);
+        const resp = await fetch(`${this.baseUrl}/api/health`);
         if (resp.ok) return;
       } catch {
         // Server not ready yet
