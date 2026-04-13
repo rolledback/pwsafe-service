@@ -22,7 +22,7 @@ export type SafeFile = {
   name: string;
   path: string;
   lastModified: string;
-  provider: string; // Provider ID (e.g., "local", "onedrive", "gdrive")
+  provider: string;
 };
 
 export type Entry = {
@@ -48,7 +48,6 @@ export type EntryPasswordResponse = {
   password: string;
 };
 
-// Provider types
 export type Provider = {
   id: string;
   displayName: string;
@@ -95,7 +94,9 @@ export type ProviderSyncResponse = {
   results: ProviderSyncResult[];
 };
 
-export const api = {
+export class ApiClient {
+  // Safe APIs
+
   async listSafes(): Promise<SafeFile[]> {
     const response = await apiFetch(`${API_BASE_URL}/safes`, {
       headers: apiHeaders(),
@@ -104,7 +105,7 @@ export const api = {
       throw new Error("Failed to fetch safes");
     }
     return response.json();
-  },
+  }
 
   async unlockSafe(id: string, password: string): Promise<SafeStructure> {
     const response = await apiFetch(`${API_BASE_URL}/safes/${id}/unlock`, {
@@ -119,7 +120,7 @@ export const api = {
     }
 
     return response.json();
-  },
+  }
 
   async getEntryPassword(id: string, password: string, entryUuid: string): Promise<string> {
     const response = await apiFetch(`${API_BASE_URL}/safes/${id}/entry`, {
@@ -135,9 +136,10 @@ export const api = {
 
     const data: EntryPasswordResponse = await response.json();
     return data.password;
-  },
+  }
 
   // Provider APIs
+
   async listProviders(): Promise<ProvidersResponse> {
     const response = await apiFetch(`${API_BASE_URL}/providers`, {
       headers: apiHeaders(),
@@ -146,7 +148,7 @@ export const api = {
       throw new Error("Failed to list providers");
     }
     return response.json();
-  },
+  }
 
   async getProviderStatus(providerId: string): Promise<ProviderStatus> {
     const response = await apiFetch(`${API_BASE_URL}/providers/${providerId}/status`, {
@@ -156,7 +158,7 @@ export const api = {
       throw new Error(`Failed to get ${providerId} status`);
     }
     return response.json();
-  },
+  }
 
   async getProviderAuthUrl(providerId: string): Promise<ProviderAuthURL> {
     const response = await apiFetch(`${API_BASE_URL}/providers/${providerId}/auth/url`, {
@@ -167,7 +169,7 @@ export const api = {
       throw new Error(error.error || `Failed to get ${providerId} auth URL`);
     }
     return response.json();
-  },
+  }
 
   async disconnectProvider(providerId: string): Promise<{ success: boolean }> {
     const response = await apiFetch(`${API_BASE_URL}/providers/${providerId}/disconnect`, {
@@ -179,7 +181,7 @@ export const api = {
       throw new Error(error.error || `Failed to disconnect ${providerId}`);
     }
     return response.json();
-  },
+  }
 
   async getProviderFiles(providerId: string): Promise<ProviderFilesResponse> {
     const response = await apiFetch(`${API_BASE_URL}/providers/${providerId}/files`, {
@@ -190,7 +192,7 @@ export const api = {
       throw new Error(error.error || `Failed to get ${providerId} files`);
     }
     return response.json();
-  },
+  }
 
   async saveProviderFiles(providerId: string, files: ProviderFile[]): Promise<{ success: boolean }> {
     const response = await apiFetch(`${API_BASE_URL}/providers/${providerId}/files`, {
@@ -203,7 +205,7 @@ export const api = {
       throw new Error(error.error || `Failed to save ${providerId} files`);
     }
     return response.json();
-  },
+  }
 
   async syncProvider(providerId: string): Promise<ProviderSyncResponse> {
     const response = await apiFetch(`${API_BASE_URL}/providers/${providerId}/sync`, {
@@ -215,9 +217,10 @@ export const api = {
       throw new Error(error.error || `Failed to sync ${providerId} files`);
     }
     return response.json();
-  },
+  }
 
-  // Static provider APIs (upload/delete static safes)
+  // Static provider APIs
+
   async uploadStaticSafe(file: File, overwrite?: boolean): Promise<{ success: boolean; name: string; exists?: boolean }> {
     const formData = new FormData();
     formData.append("file", file);
@@ -233,7 +236,6 @@ export const api = {
     const data = await response.json();
 
     if (response.status === 409) {
-      // File exists, return conflict info
       return { success: false, name: data.name, exists: true };
     }
 
@@ -242,7 +244,7 @@ export const api = {
     }
 
     return { success: true, name: data.name };
-  },
+  }
 
   async deleteStaticSafe(id: string): Promise<{ success: boolean }> {
     const response = await apiFetch(`${API_BASE_URL}/providers/static/files/${id}`, {
@@ -254,13 +256,14 @@ export const api = {
       throw new Error(error.error || "Failed to delete safe");
     }
     return response.json();
-  },
+  }
 
   // Auth APIs
+
   async getAuthStatus(): Promise<{ mode: string; authenticated: boolean }> {
     const response = await fetch(`${API_BASE_URL}/auth/status`, { credentials: "include" });
     return response.json();
-  },
+  }
 
   async authSetup(mode: string, password?: string): Promise<void> {
     const response = await fetch(`${API_BASE_URL}/auth/setup`, {
@@ -270,7 +273,7 @@ export const api = {
       body: JSON.stringify({ mode, password }),
     });
     if (!response.ok) throw new Error((await response.text()).trim());
-  },
+  }
 
   async login(password: string): Promise<void> {
     const response = await fetch(`${API_BASE_URL}/auth/login`, {
@@ -280,7 +283,7 @@ export const api = {
       body: JSON.stringify({ password }),
     });
     if (!response.ok) throw new Error((await response.text()).trim());
-  },
+  }
 
   async logout(): Promise<void> {
     await fetch(`${API_BASE_URL}/auth/logout`, {
@@ -288,5 +291,7 @@ export const api = {
       headers: apiHeaders(),
       credentials: "include",
     });
-  },
-};
+  }
+}
+
+export const api = new ApiClient();
