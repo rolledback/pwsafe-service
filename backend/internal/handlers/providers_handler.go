@@ -2,14 +2,19 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/rolledback/pwsafe-service/backend/internal/auth"
 	"github.com/rolledback/pwsafe-service/backend/internal/models"
 	"github.com/rolledback/pwsafe-service/backend/internal/service"
 )
+
+// validProviderID matches safe provider IDs (alphanumeric, dash, underscore).
+var validProviderID = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // ProviderInfo represents a provider in the list response
 type ProviderInfo struct {
@@ -67,6 +72,22 @@ func (h *ProvidersHandler) Route(w http.ResponseWriter, r *http.Request) {
 		action = parts[1]
 	}
 
+	// For OAuth callbacks, enforce the method and return a uniform response
+	// regardless of whether the provider is configured, preventing enumeration.
+	if action == "auth/callback" {
+		if r.Method != http.MethodGet {
+			h.respondError(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		svc, ok := h.services[providerID]
+		if !ok {
+			h.callbackError(w, r, providerID)
+			return
+		}
+		h.handleCallback(w, r, svc, providerID)
+		return
+	}
+
 	// Get the service for this provider
 	svc, ok := h.services[providerID]
 	if !ok {
@@ -80,8 +101,6 @@ func (h *ProvidersHandler) Route(w http.ResponseWriter, r *http.Request) {
 		h.getStatus(w, r, svc)
 	case "auth/url":
 		h.getAuthURL(w, r, svc)
-	case "auth/callback":
-		h.handleCallback(w, r, svc, providerID)
 	case "disconnect":
 		h.disconnect(w, r, svc)
 	case "files":
@@ -130,18 +149,13 @@ func (h *ProvidersHandler) getAuthURL(w http.ResponseWriter, r *http.Request, sv
 }
 
 func (h *ProvidersHandler) handleCallback(w http.ResponseWriter, r *http.Request, svc *service.SyncableSafesService, providerID string) {
-	if r.Method != http.MethodGet {
-		h.respondError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	code := r.URL.Query().Get("code")
 	if code == "" {
 		errorDesc := r.URL.Query().Get("error_description")
 		if errorDesc != "" {
 			log.Printf("OAuth error for %s: %s", providerID, errorDesc)
 		}
-		http.Redirect(w, r, "/web/add/"+providerID+"?error=auth_failed", http.StatusFound)
+		h.callbackError(w, r, providerID)
 		return
 	}
 
@@ -149,11 +163,22 @@ func (h *ProvidersHandler) handleCallback(w http.ResponseWriter, r *http.Request
 	sessionID := auth.GetSessionIDFromRequest(r)
 	if err := svc.Provider().HandleCallback(r.Context(), code, state, sessionID); err != nil {
 		log.Printf("Error handling %s callback: %v", providerID, err)
-		http.Redirect(w, r, "/web/add/"+providerID+"?error=token_exchange_failed", http.StatusFound)
+		h.callbackError(w, r, providerID)
 		return
 	}
 
 	http.Redirect(w, r, "/web/add/"+providerID, http.StatusFound)
+}
+
+// callbackError redirects with a generic error for all OAuth callback failures.
+// The response is identical regardless of whether the provider is configured,
+// preventing unauthenticated provider enumeration.
+func (h *ProvidersHandler) callbackError(w http.ResponseWriter, r *http.Request, providerID string) {
+	// Sanitize providerID so it cannot be used for path traversal or injection.
+	if !validProviderID.MatchString(providerID) {
+		providerID = "unknown"
+	}
+	http.Redirect(w, r, "/web/add/"+providerID+"?error=auth_error", http.StatusFound)
 }
 
 func (h *ProvidersHandler) disconnect(w http.ResponseWriter, r *http.Request, svc *service.SyncableSafesService) {
@@ -200,10 +225,16 @@ func (h *ProvidersHandler) listFiles(w http.ResponseWriter, r *http.Request, svc
 func (h *ProvidersHandler) saveFiles(w http.ResponseWriter, r *http.Request, svc *service.SyncableSafesService) {
 	providerID := svc.Provider().ID()
 
+	r.Body = http.MaxBytesReader(w, r.Body, 8192)
 	var req struct {
 		Files []service.SelectedFile `json:"files"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			h.respondError(w, "Request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		h.respondError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}

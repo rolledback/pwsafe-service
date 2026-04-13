@@ -32,4 +32,12 @@ describeDualMode("Upload Validation", {}, (getApi) => {
     const resp = await api.uploadStaticSafe("test.psafe3.txt", content);
     expect(resp.status).toBe(400);
   });
+
+  it("rejects oversized file upload", async () => {
+    const api = getApi();
+    // Create a buffer slightly over 10MB (default maxSafeFileSize)
+    const oversizedContent = Buffer.alloc(11 * 1024 * 1024, 0x41);
+    const resp = await api.uploadStaticSafe("oversized.psafe3", oversizedContent);
+    expect(resp.status).toBe(413);
+  });
 });

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/rolledback/pwsafe-service/backend/internal/models"
@@ -274,6 +275,66 @@ func TestGetEntryPassword_MissingFields(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("Expected status 400, got %d", w.Code)
+	}
+}
+
+func TestUnlockSafe_OversizedBody_Rejected(t *testing.T) {
+	tmpDir := testutil.SetupTestDataDir(t)
+	service := service.NewSafeService(tmpDir, 10<<20)
+	handler := NewSafeHandler(service)
+
+	safe := getSafeByName(handler, "simple.psafe3")
+	if safe == nil {
+		t.Fatal("Could not find simple.psafe3 in safes list")
+	}
+
+	bigBody := `{"password":"` + strings.Repeat("a", 2000) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/safes/"+safe.ID+"/unlock", bytes.NewReader([]byte(bigBody)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handler.UnlockSafe(w, req)
+
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("Expected status 413 for oversized body, got %d", w.Code)
+	}
+
+	var errResp models.ErrorResponse
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("Failed to decode error response: %v", err)
+	}
+	if !strings.Contains(errResp.Error, "too large") {
+		t.Errorf("Expected error to mention 'too large', got %q", errResp.Error)
+	}
+}
+
+func TestGetEntryPassword_OversizedBody_Rejected(t *testing.T) {
+	tmpDir := testutil.SetupTestDataDir(t)
+	service := service.NewSafeService(tmpDir, 10<<20)
+	handler := NewSafeHandler(service)
+
+	safe := getSafeByName(handler, "simple.psafe3")
+	if safe == nil {
+		t.Fatal("Could not find simple.psafe3 in safes list")
+	}
+
+	bigBody := `{"password":"` + strings.Repeat("a", 2000) + `","entryUuid":"test"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/safes/"+safe.ID+"/entry", bytes.NewReader([]byte(bigBody)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handler.GetEntryPassword(w, req)
+
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("Expected status 413 for oversized body, got %d", w.Code)
+	}
+
+	var errResp models.ErrorResponse
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("Failed to decode error response: %v", err)
+	}
+	if !strings.Contains(errResp.Error, "too large") {
+		t.Errorf("Expected error to mention 'too large', got %q", errResp.Error)
 	}
 }
 

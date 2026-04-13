@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -72,9 +73,17 @@ func (h *StaticProviderHandler) handleFiles(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *StaticProviderHandler) uploadFile(w http.ResponseWriter, r *http.Request) {
-	// Parse multipart form (limit to 10MB)
+	// Cap total request body to maxSafeFileSize + 1MB overhead for multipart headers
+	r.Body = http.MaxBytesReader(w, r.Body, h.maxSafeFileSize+1<<20)
+
+	// Parse multipart form (limit in-memory buffering to 10MB)
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
 		log.Printf("Error parsing multipart form: %v", err)
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			h.respondError(w, "Request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		h.respondError(w, "Failed to parse upload", http.StatusBadRequest)
 		return
 	}

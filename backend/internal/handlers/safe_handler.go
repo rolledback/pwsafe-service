@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -37,8 +38,14 @@ func (h *SafeHandler) UnlockSafe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1024)
 	var req models.UnlockRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			h.respondError(w, "Request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		h.respondError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -63,8 +70,14 @@ func (h *SafeHandler) GetEntryPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1024)
 	var req models.EntryPasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			h.respondError(w, "Request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		h.respondError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
