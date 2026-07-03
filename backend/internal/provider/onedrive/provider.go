@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -276,12 +277,16 @@ func (p *OneDriveProvider) ListRemoteFiles(ctx context.Context) ([]provider.Remo
 		return nil, fmt.Errorf("failed to decode search response: %w", err)
 	}
 
+	log.Printf("%s: ListRemoteFiles: Graph search returned %d item(s) for query %q", p.id, len(searchResp.Value), ".psafe3")
+
 	var files []provider.RemoteFile
 	for _, item := range searchResp.Value {
 		// Filter to only .psafe3 files (search may return partial matches)
 		if !strings.HasSuffix(strings.ToLower(item.Name), ".psafe3") {
+			log.Printf("%s: ListRemoteFiles: filtering out non-.psafe3 item %q (path %q)", p.id, item.Name, item.ParentReference.Path)
 			continue
 		}
+		log.Printf("%s: ListRemoteFiles: including %q (path %q, %d bytes)", p.id, item.Name, item.ParentReference.Path, item.Size)
 
 		// Extract path, removing the "/drive/root:" prefix
 		path := item.ParentReference.Path

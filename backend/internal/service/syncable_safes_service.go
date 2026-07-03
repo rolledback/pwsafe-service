@@ -109,8 +109,11 @@ func (s *SyncableSafesService) ListFiles(ctx context.Context) ([]SelectedFile, e
 	remoteFiles, err := s.provider.ListRemoteFiles(ctx)
 	if err != nil {
 		// Return cached files if remote unavailable
+		log.Printf("%s: ListFiles: remote fetch failed, returning %d cached file(s): %v", s.provider.ID(), len(config.Files), err)
 		return config.Files, nil
 	}
+
+	log.Printf("%s: ListFiles: remote fetch returned %d file(s)", s.provider.ID(), len(remoteFiles))
 
 	// Merge: remote files + saved selection state
 	var result []SelectedFile
