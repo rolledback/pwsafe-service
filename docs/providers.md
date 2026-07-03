@@ -59,6 +59,16 @@ Update `"providers"` in your `settings.json` to include:
 ```
 
 - `clientId`: The Application (client) ID from Step 1.6
+- `safesDirPaths` (preview, optional): An array of OneDrive folder paths (relative to your drive root) to scope safe discovery to. When set to a non-empty array, only the immediate (non-recursive) `.psafe3` children of these folders are listed. When omitted or set to an empty array, pwsafe-service performs a drive-wide search instead. Scoping to specific folders is faster on large drives and avoids OneDrive's search index occasionally omitting recently created or renamed files. Example:
+
+```json
+{
+  "onedrive": {
+    "clientId": "your-client-id-here",
+    "safesDirPaths": ["/Documents/Password Safes"]
+  }
+}
+```
 
 ### Step 4: Connect Your Account
 
@@ -68,4 +78,4 @@ Update `"providers"` in your `settings.json` to include:
 4. Click "Connect Account"
 5. Sign in with your Microsoft account and authorize the application
 
-Once connected, pwsafe-service will list all .psafe3 files in your OneDrive. You can choose which ones you would like synced to the host machine.
+Once connected, pwsafe-service will list .psafe3 files in your OneDrive (all or scoped, depending on configuration). You can choose which ones you would like synced to the host machine.

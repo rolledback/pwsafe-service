@@ -22,11 +22,11 @@ import (
 )
 
 const (
-	msAuthority        = "https://login.microsoftonline.com/consumers"
-	msAuthorizeURL     = msAuthority + "/oauth2/v2.0/authorize"
-	msTokenURL         = msAuthority + "/oauth2/v2.0/token"
-	msGraphURL         = "https://graph.microsoft.com/v1.0"
-	onedriveScopes     = "Files.Read User.Read offline_access"
+	msAuthority    = "https://login.microsoftonline.com/consumers"
+	msAuthorizeURL = msAuthority + "/oauth2/v2.0/authorize"
+	msTokenURL     = msAuthority + "/oauth2/v2.0/token"
+	msGraphURL     = "https://graph.microsoft.com/v1.0"
+	onedriveScopes = "Files.Read User.Read offline_access"
 
 	// OneDrive brand color (Microsoft blue)
 	onedriveBrandColor = "#0078D4"
@@ -46,12 +46,13 @@ type tokens struct {
 
 // OneDriveProvider implements provider.SyncableSafesProvider
 type OneDriveProvider struct {
-	id          string // provider ID for store keying
-	storageDir  string // The provider's directory (e.g., {safesDir}/onedrive)
-	clientID    string
-	redirectURI string
-	tokenMutex  sync.Mutex
-	oauthStore  *oauthstate.Store
+	id            string // provider ID for store keying
+	storageDir    string // The provider's directory (e.g., {safesDir}/onedrive)
+	clientID      string
+	redirectURI   string
+	safesDirPaths []string
+	tokenMutex    sync.Mutex
+	oauthStore    *oauthstate.Store
 }
 
 // Factory creates an OneDriveProvider from the settings.json providers config
@@ -65,24 +66,57 @@ func Factory(providerID string, dataDir string, baseURL string, providerConfig m
 		return nil, fmt.Errorf("oauthStore is required for onedrive provider")
 	}
 
+	// Optional: scope discovery to specific folders instead of a drive-wide search.
+	safesDirPaths, err := parseSafesDirPaths(providerConfig["safesDirPaths"])
+	if err != nil {
+		return nil, err
+	}
+
 	// Callback URL derived from baseURL + fixed path
 	redirectURI := strings.TrimSuffix(baseURL, "/") + "/api/providers/onedrive/auth/callback"
 
 	// Storage dir is dataDir/{providerID}
 	storageDir := filepath.Join(dataDir, providerID)
 
-	return NewOneDriveProvider(providerID, storageDir, clientID, redirectURI, oauthStore)
+	return NewOneDriveProvider(providerID, storageDir, clientID, redirectURI, safesDirPaths, oauthStore)
+}
+
+// parseSafesDirPaths converts the raw JSON value for safesDirPaths (expected to
+// be an array of strings) into a normalized []string. A missing/nil value is
+// valid and yields an empty slice.
+func parseSafesDirPaths(raw any) ([]string, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	arr, ok := raw.([]any)
+	if !ok {
+		return nil, fmt.Errorf("safesDirPaths must be an array of strings")
+	}
+	var paths []string
+	for _, v := range arr {
+		s, ok := v.(string)
+		if !ok {
+			return nil, fmt.Errorf("safesDirPaths must be an array of strings")
+		}
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		paths = append(paths, s)
+	}
+	return paths, nil
 }
 
 // NewOneDriveProvider creates a new OneDrive provider
 // storageDir is the provider's directory where tokens and data are stored
-func NewOneDriveProvider(id, storageDir, clientID, redirectURI string, oauthStore *oauthstate.Store) (*OneDriveProvider, error) {
+func NewOneDriveProvider(id, storageDir, clientID, redirectURI string, safesDirPaths []string, oauthStore *oauthstate.Store) (*OneDriveProvider, error) {
 	p := &OneDriveProvider{
-		id:          id,
-		storageDir:  storageDir,
-		clientID:    clientID,
-		redirectURI: redirectURI,
-		oauthStore:  oauthStore,
+		id:            id,
+		storageDir:    storageDir,
+		clientID:      clientID,
+		redirectURI:   redirectURI,
+		safesDirPaths: safesDirPaths,
+		oauthStore:    oauthStore,
 	}
 	// Auto-create data folder
 	if err := p.ensureStorageDir(); err != nil {
@@ -244,12 +278,123 @@ func (p *OneDriveProvider) GetConnectionStatus(ctx context.Context, attemptRefre
 
 // ============ REMOTE OPERATIONS (2 methods - the core primitives) ============
 
+// driveItem is a subset of the Microsoft Graph DriveItem resource.
+type driveItem struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Size   int64  `json:"size"`
+	Folder *struct {
+		ChildCount int64 `json:"childCount"`
+	} `json:"folder"`
+	File *struct {
+		MimeType string `json:"mimeType"`
+	} `json:"file"`
+	ParentReference struct {
+		Path string `json:"path"`
+	} `json:"parentReference"`
+}
+
 func (p *OneDriveProvider) ListRemoteFiles(ctx context.Context) ([]provider.RemoteFile, error) {
 	accessToken, err := p.getValidAccessToken(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	// When specific folders are configured, list only their (non-recursive)
+	// children. When no folders are configured (omitted or empty array), fall
+	// back to a drive-wide search.
+	if len(p.safesDirPaths) > 0 {
+		return p.listConfiguredDirs(ctx, accessToken)
+	}
+	return p.searchRemoteFiles(ctx, accessToken)
+}
+
+// listConfiguredDirs lists the immediate children of each configured folder in
+// safesDirPaths, returning only .psafe3 files. This avoids Graph's search()
+// index, which intermittently omits files (e.g. recently created/renamed safes).
+func (p *OneDriveProvider) listConfiguredDirs(ctx context.Context, accessToken string) ([]provider.RemoteFile, error) {
+	var files []provider.RemoteFile
+	for _, dir := range p.safesDirPaths {
+		dirFiles, err := p.listDirChildren(ctx, accessToken, dir)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, dirFiles...)
+	}
+	log.Printf("%s: ListRemoteFiles: listed %d configured dir(s), found %d .psafe3 file(s)", p.id, len(p.safesDirPaths), len(files))
+	return files, nil
+}
+
+// listDirChildren fetches the immediate children of a single folder path
+// (non-recursive), following @odata.nextLink pagination, and returns its
+// .psafe3 files.
+func (p *OneDriveProvider) listDirChildren(ctx context.Context, accessToken, dir string) ([]provider.RemoteFile, error) {
+	// Normalize to a leading-slash, no-trailing-slash relative path.
+	clean := "/" + strings.Trim(dir, "/")
+
+	// Build the addressing URL. The drive root itself is addressed differently
+	// from a nested path (which requires the ":/path:" colon syntax).
+	var nextURL string
+	if clean == "/" {
+		nextURL = msGraphURL + "/me/drive/root/children"
+	} else {
+		nextURL = msGraphURL + "/me/drive/root:" + encodePath(clean) + ":/children"
+	}
+
+	var files []provider.RemoteFile
+	for nextURL != "" {
+		resp, err := p.doAuthRequest(ctx, "GET", nextURL, accessToken, nil)
+		if err != nil {
+			return nil, fmt.Errorf("children request failed for %q: %w", dir, err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusNotFound {
+				log.Printf("%s: ListRemoteFiles: configured dir %q not found, skipping", p.id, dir)
+				return nil, nil
+			}
+			return nil, fmt.Errorf("children listing failed for %q with status %d: %s", dir, resp.StatusCode, string(body))
+		}
+
+		var page struct {
+			Value    []driveItem `json:"value"`
+			NextLink string      `json:"@odata.nextLink"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("failed to decode children response for %q: %w", dir, err)
+		}
+		resp.Body.Close()
+
+		for _, item := range page.Value {
+			// Non-recursive: ignore subfolders.
+			if item.Folder != nil {
+				continue
+			}
+			if !strings.HasSuffix(strings.ToLower(item.Name), ".psafe3") {
+				continue
+			}
+			path := normalizeParentPath(item.ParentReference.Path)
+			log.Printf("%s: ListRemoteFiles: including %q (path %q, %d bytes)", p.id, item.Name, path, item.Size)
+			files = append(files, provider.RemoteFile{
+				ID:   item.ID,
+				Name: item.Name,
+				Path: path,
+				Size: item.Size,
+			})
+		}
+
+		nextURL = page.NextLink
+	}
+
+	return files, nil
+}
+
+// searchRemoteFiles discovers .psafe3 files drive-wide via Graph search(). Used
+// when no safesDirPaths are configured.
+func (p *OneDriveProvider) searchRemoteFiles(ctx context.Context, accessToken string) ([]provider.RemoteFile, error) {
 	searchURL := msGraphURL + "/me/drive/root/search(q='.psafe3')"
 	resp, err := p.doAuthRequest(ctx, "GET", searchURL, accessToken, nil)
 	if err != nil {
@@ -263,16 +408,8 @@ func (p *OneDriveProvider) ListRemoteFiles(ctx context.Context) ([]provider.Remo
 	}
 
 	var searchResp struct {
-		Value []struct {
-			ID              string `json:"id"`
-			Name            string `json:"name"`
-			Size            int64  `json:"size"`
-			ParentReference struct {
-				Path string `json:"path"`
-			} `json:"parentReference"`
-		} `json:"value"`
+		Value []driveItem `json:"value"`
 	}
-
 	if err := json.NewDecoder(resp.Body).Decode(&searchResp); err != nil {
 		return nil, fmt.Errorf("failed to decode search response: %w", err)
 	}
@@ -281,26 +418,13 @@ func (p *OneDriveProvider) ListRemoteFiles(ctx context.Context) ([]provider.Remo
 
 	var files []provider.RemoteFile
 	for _, item := range searchResp.Value {
-		// Filter to only .psafe3 files (search may return partial matches)
+		// Filter to only .psafe3 files (search may return partial matches).
 		if !strings.HasSuffix(strings.ToLower(item.Name), ".psafe3") {
 			log.Printf("%s: ListRemoteFiles: filtering out non-.psafe3 item %q (path %q)", p.id, item.Name, item.ParentReference.Path)
 			continue
 		}
-		log.Printf("%s: ListRemoteFiles: including %q (path %q, %d bytes)", p.id, item.Name, item.ParentReference.Path, item.Size)
-
-		// Extract path, removing the "/drive/root:" prefix
-		path := item.ParentReference.Path
-		if idx := strings.Index(path, ":"); idx != -1 {
-			path = path[idx+1:]
-		}
-		// URL-decode the path (Graph API returns URL-encoded paths)
-		if decodedPath, err := url.PathUnescape(path); err == nil {
-			path = decodedPath
-		}
-		if path == "" {
-			path = "/"
-		}
-
+		path := normalizeParentPath(item.ParentReference.Path)
+		log.Printf("%s: ListRemoteFiles: including %q (path %q, %d bytes)", p.id, item.Name, path, item.Size)
 		files = append(files, provider.RemoteFile{
 			ID:   item.ID,
 			Name: item.Name,
@@ -310,6 +434,33 @@ func (p *OneDriveProvider) ListRemoteFiles(ctx context.Context) ([]provider.Remo
 	}
 
 	return files, nil
+}
+
+// encodePath URL-encodes each segment of a slash-delimited path while
+// preserving the slashes, suitable for Graph's ":/path:" addressing.
+func encodePath(p string) string {
+	segments := strings.Split(p, "/")
+	for i, s := range segments {
+		segments[i] = url.PathEscape(s)
+	}
+	return strings.Join(segments, "/")
+}
+
+// normalizeParentPath converts a Graph parentReference.path
+// (e.g. "/drive/root:/Documents/Password%20Safes") into a plain,
+// URL-decoded path (e.g. "/Documents/Password Safes").
+func normalizeParentPath(raw string) string {
+	path := raw
+	if idx := strings.Index(path, ":"); idx != -1 {
+		path = path[idx+1:]
+	}
+	if decodedPath, err := url.PathUnescape(path); err == nil {
+		path = decodedPath
+	}
+	if path == "" {
+		path = "/"
+	}
+	return path
 }
 
 func (p *OneDriveProvider) DownloadFile(ctx context.Context, fileID string) (*provider.DownloadResult, error) {
