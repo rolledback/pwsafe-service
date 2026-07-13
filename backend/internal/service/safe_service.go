@@ -268,7 +268,7 @@ func (s *SafeService) openSafe(safePath, password string) (*pwsafe.V3, error) {
 		return nil, fmt.Errorf("safe file exceeds maximum size (%d bytes)", s.maxSafeFileSize)
 	}
 
-	db, err := pwsafe.OpenPWSafeFile(absPath, password)
+	db, err := pwsafe.OpenPWSafeFileKeyedByUUID(absPath, password)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unlock safe: %w", err)
 	}
