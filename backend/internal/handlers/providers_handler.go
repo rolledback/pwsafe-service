@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"regexp"
@@ -166,6 +167,12 @@ func (h *ProvidersHandler) handleCallback(w http.ResponseWriter, r *http.Request
 		h.callbackError(w, r, providerID)
 		return
 	}
+
+	logID := providerID
+	if status, err := svc.Provider().GetConnectionStatus(r.Context(), false); err == nil && status.AccountEmail != "" {
+		logID = fmt.Sprintf("%s (%s)", providerID, status.AccountEmail)
+	}
+	log.Printf("%s: connected", logID)
 
 	http.Redirect(w, r, "/web/add/"+providerID, http.StatusFound)
 }

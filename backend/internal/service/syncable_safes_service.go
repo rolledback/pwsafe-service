@@ -68,6 +68,25 @@ func (s *SyncableSafesService) Provider() provider.SyncableSafesProvider {
 	return s.provider
 }
 
+// logIDFromEmail formats a "providerID (accountEmail)" string for log lines,
+// falling back to just the provider ID if email is empty.
+func (s *SyncableSafesService) logIDFromEmail(accountEmail string) string {
+	if accountEmail == "" {
+		return s.provider.ID()
+	}
+	return fmt.Sprintf("%s (%s)", s.provider.ID(), accountEmail)
+}
+
+// logID returns a "providerID (accountEmail)" string for log lines, using only
+// locally-cached connection info (no network calls, attemptRefresh=false).
+func (s *SyncableSafesService) logID(ctx context.Context) string {
+	status, err := s.provider.GetConnectionStatus(ctx, false)
+	if err != nil {
+		return s.provider.ID()
+	}
+	return s.logIDFromEmail(status.AccountEmail)
+}
+
 // GetProviderStatus returns the provider status merged with sync timing
 func (s *SyncableSafesService) GetProviderStatus(ctx context.Context) (*ProviderStatus, error) {
 	s.syncMutex.RLock()
@@ -78,7 +97,7 @@ func (s *SyncableSafesService) GetProviderStatus(ctx context.Context) (*Provider
 		return nil, err
 	}
 
-	config, _ := s.loadConfig()
+	config := s.loadConfigOrEmpty("GetProviderStatus")
 
 	s.nextSyncMutex.RLock()
 	nextSyncAt := s.nextSyncAt.Format(time.RFC3339)
@@ -99,33 +118,51 @@ func (s *SyncableSafesService) GetProviderStatus(ctx context.Context) (*Provider
 // ListFiles returns remote files merged with saved selection state
 func (s *SyncableSafesService) ListFiles(ctx context.Context) ([]SelectedFile, error) {
 	// Load saved config
-	config, _ := s.loadConfig()
+	config := s.loadConfigOrEmpty("ListFiles")
 	savedSelections := make(map[string]bool)
+	savedNames := make(map[string]string, len(config.Files))
 	for _, f := range config.Files {
 		savedSelections[f.ID] = f.Selected
+		savedNames[f.ID] = f.Name
 	}
 
 	// Fetch remote files
 	remoteFiles, err := s.provider.ListRemoteFiles(ctx)
 	if err != nil {
 		// Return cached files if remote unavailable
-		log.Printf("%s: ListFiles: remote fetch failed, returning %d cached file(s): %v", s.provider.ID(), len(config.Files), err)
+		log.Printf("%s: ListFiles: remote fetch failed, returning %d cached file(s): %v", s.logID(ctx), len(config.Files), err)
 		return config.Files, nil
 	}
 
-	log.Printf("%s: ListFiles: remote fetch returned %d file(s)", s.provider.ID(), len(remoteFiles))
-
 	// Merge: remote files + saved selection state
 	var result []SelectedFile
+	selectedCount := 0
+	seenIDs := make(map[string]bool, len(remoteFiles))
 	for _, rf := range remoteFiles {
+		seenIDs[rf.ID] = true
+		selected := savedSelections[rf.ID]
+		if selected {
+			selectedCount++
+		}
 		result = append(result, SelectedFile{
 			ID:       rf.ID,
 			Name:     rf.Name,
 			Path:     rf.Path,
 			Size:     rf.Size,
-			Selected: savedSelections[rf.ID],
+			Selected: selected,
 		})
 	}
+
+	// Call out any previously-selected file this listing didn't return, by name,
+	// so a provider-side listing gap (the file still exists, but this particular
+	// fetch didn't include it) is visible per-file, not just as a count change.
+	for id, selected := range savedSelections {
+		if selected && !seenIDs[id] {
+			log.Printf("%s: ListFiles: WARNING previously-selected file %q (id=%s) is absent from this listing of %d file(s)", s.logID(ctx), savedNames[id], id, len(remoteFiles))
+		}
+	}
+
+	log.Printf("%s: ListFiles: remote fetch returned %d file(s), %d currently selected", s.logID(ctx), len(remoteFiles), selectedCount)
 
 	return result, nil
 }
@@ -137,7 +174,16 @@ func (s *SyncableSafesService) SaveFiles(files []SelectedFile) error {
 			return fmt.Errorf("invalid file path: %w", err)
 		}
 	}
-	config, _ := s.loadConfig()
+
+	var selectedNames []string
+	for _, f := range files {
+		if f.Selected {
+			selectedNames = append(selectedNames, f.Name)
+		}
+	}
+	log.Printf("%s: SaveFiles: saving selection for %d file(s), %d selected: %v", s.logID(context.Background()), len(files), len(selectedNames), selectedNames)
+
+	config := s.loadConfigOrEmpty("SaveFiles")
 	config.Files = files
 	return s.saveConfig(config)
 }
@@ -171,6 +217,10 @@ func (s *SyncableSafesService) Sync(ctx context.Context) ([]SyncResult, error) {
 		}
 	}
 
+	logID := s.logIDFromEmail(status.AccountEmail)
+
+	log.Printf("%s: Sync: starting, %d file(s) selected", logID, len(selectedFiles))
+
 	var results []SyncResult
 
 	// Step 2: For each selected file, download from remote
@@ -200,6 +250,7 @@ func (s *SyncableSafesService) Sync(ctx context.Context) ([]SyncResult, error) {
 		// Download via provider primitive (returns DownloadResult with LastModified)
 		lastModified, err := s.downloadToPath(ctx, file.ID, localPath)
 		if err != nil {
+			log.Printf("%s: Sync: failed to download %q: %v", s.provider.ID(), file.Name, err)
 			result.Error = err.Error()
 		} else {
 			result.Success = true
@@ -217,11 +268,23 @@ func (s *SyncableSafesService) Sync(ctx context.Context) ([]SyncResult, error) {
 
 	// Step 5: Next sync scheduled by periodic loop
 
+	successCount := 0
+	for _, r := range results {
+		if r.Success {
+			successCount++
+		}
+	}
+	log.Printf("%s: Sync: completed (%d/%d file(s) downloaded successfully)", logID, successCount, len(results))
+
 	return results, nil
 }
 
 // Disconnect removes provider connection and cleans up
 func (s *SyncableSafesService) Disconnect(ctx context.Context) error {
+	// Capture the log label before the provider clears its tokens - after
+	// Disconnect() below, the account email is no longer available to read.
+	logID := s.logID(ctx)
+
 	// Let provider clean up its auth state (tokens)
 	if err := s.provider.Disconnect(ctx); err != nil {
 		return err
@@ -230,6 +293,8 @@ func (s *SyncableSafesService) Disconnect(ctx context.Context) error {
 	// Clean up generic state (config + synced files)
 	os.Remove(s.configPath())
 	s.cleanupAllSafeFiles()
+
+	log.Printf("%s: Disconnect: removed saved selection and synced files", logID)
 
 	return nil
 }
@@ -256,22 +321,21 @@ func (s *SyncableSafesService) periodicSync() {
 
 func (s *SyncableSafesService) tryPeriodicSync() {
 	status, err := s.provider.GetConnectionStatus(s.ctx, false) // cheap check
-	if err != nil || !status.Connected {
-		return // Skip if not connected
+	if err != nil {
+		log.Printf("%s: periodic sync skipped: failed to check connection status: %v", s.provider.ID(), err)
+		return
+	}
+	if !status.Connected {
+		reason := "not connected"
+		if status.NeedsReauth {
+			reason = "needs reauth"
+		}
+		log.Printf("%s: periodic sync skipped: %s", s.provider.ID(), reason)
+		return
 	}
 
-	log.Printf("%s: starting periodic sync", s.provider.ID())
-	results, err := s.Sync(s.ctx)
-	if err != nil {
+	if _, err := s.Sync(s.ctx); err != nil {
 		log.Printf("%s: periodic sync failed: %v", s.provider.ID(), err)
-	} else {
-		successCount := 0
-		for _, r := range results {
-			if r.Success {
-				successCount++
-			}
-		}
-		log.Printf("%s: periodic sync completed (%d/%d files)", s.provider.ID(), successCount, len(results))
 	}
 }
 
@@ -296,6 +360,18 @@ func (s *SyncableSafesService) loadConfig() (*SyncConfig, error) {
 		return nil, err
 	}
 	return &config, nil
+}
+
+// loadConfigOrEmpty loads the saved config, logging (rather than silently discarding)
+// any error reading/parsing it, and falling back to an empty config so callers never
+// have to handle a nil result.
+func (s *SyncableSafesService) loadConfigOrEmpty(caller string) *SyncConfig {
+	config, err := s.loadConfig()
+	if err != nil {
+		log.Printf("%s: %s: failed to load saved config, treating as empty: %v", s.provider.ID(), caller, err)
+		return &SyncConfig{Files: []SelectedFile{}}
+	}
+	return config
 }
 
 func (s *SyncableSafesService) saveConfig(config *SyncConfig) error {
