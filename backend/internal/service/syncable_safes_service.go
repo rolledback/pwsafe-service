@@ -115,15 +115,17 @@ func (s *SyncableSafesService) GetProviderStatus(ctx context.Context) (*Provider
 	}, nil
 }
 
-// ListFiles returns remote files merged with saved selection state
+// ListFiles returns remote files merged with saved selection state. Files whose
+// id changed since last save (matched by path+name) carry their selection
+// forward instead of appearing unselected.
 func (s *SyncableSafesService) ListFiles(ctx context.Context) ([]SelectedFile, error) {
 	// Load saved config
 	config := s.loadConfigOrEmpty("ListFiles")
-	savedSelections := make(map[string]bool)
-	savedNames := make(map[string]string, len(config.Files))
+	savedByID := make(map[string]SelectedFile, len(config.Files))
+	savedByPathName := make(map[string]SelectedFile, len(config.Files))
 	for _, f := range config.Files {
-		savedSelections[f.ID] = f.Selected
-		savedNames[f.ID] = f.Name
+		savedByID[f.ID] = f
+		savedByPathName[f.Path+"\x00"+f.Name] = f
 	}
 
 	// Fetch remote files
@@ -134,14 +136,25 @@ func (s *SyncableSafesService) ListFiles(ctx context.Context) ([]SelectedFile, e
 		return config.Files, nil
 	}
 
-	// Merge: remote files + saved selection state
+	// Merge: remote files + saved selection state, falling back to path+name
+	// matching when the id itself doesn't match anything saved.
 	var result []SelectedFile
 	selectedCount := 0
 	seenIDs := make(map[string]bool, len(remoteFiles))
+	idMigrations := make(map[string]string) // old id -> new id
 	for _, rf := range remoteFiles {
 		seenIDs[rf.ID] = true
-		selected := savedSelections[rf.ID]
-		if selected {
+
+		saved, ok := savedByID[rf.ID]
+		if !ok {
+			if byPathName, ok2 := savedByPathName[rf.Path+"\x00"+rf.Name]; ok2 && byPathName.ID != rf.ID {
+				log.Printf("%s: ListFiles: file %q changed id (%s -> %s), carrying forward its selection", s.logID(ctx), rf.Name, byPathName.ID, rf.ID)
+				saved = byPathName
+				idMigrations[byPathName.ID] = rf.ID
+			}
+		}
+
+		if saved.Selected {
 			selectedCount++
 		}
 		result = append(result, SelectedFile{
@@ -149,20 +162,39 @@ func (s *SyncableSafesService) ListFiles(ctx context.Context) ([]SelectedFile, e
 			Name:     rf.Name,
 			Path:     rf.Path,
 			Size:     rf.Size,
-			Selected: selected,
+			Selected: saved.Selected,
 		})
 	}
 
-	// Call out any previously-selected file this listing didn't return, by name,
-	// so a provider-side listing gap (the file still exists, but this particular
-	// fetch didn't include it) is visible per-file, not just as a count change.
-	for id, selected := range savedSelections {
-		if selected && !seenIDs[id] {
-			log.Printf("%s: ListFiles: WARNING previously-selected file %q (id=%s) is absent from this listing of %d file(s)", s.logID(ctx), savedNames[id], id, len(remoteFiles))
+	// Warn about previously-selected files this listing didn't return at all,
+	// excluding ones already accounted for by an id migration above.
+	for _, f := range config.Files {
+		if !f.Selected || seenIDs[f.ID] {
+			continue
 		}
+		if _, migratedAway := idMigrations[f.ID]; migratedAway {
+			continue
+		}
+		log.Printf("%s: ListFiles: WARNING previously-selected file %q (id=%s) is absent from this listing of %d file(s)", s.logID(ctx), f.Name, f.ID, len(remoteFiles))
 	}
 
 	log.Printf("%s: ListFiles: remote fetch returned %d file(s), %d currently selected", s.logID(ctx), len(remoteFiles), selectedCount)
+
+	// Persist id migrations so periodic Sync, which reads the saved config
+	// directly, uses the new id right away.
+	if len(idMigrations) > 0 {
+		updated := make([]SelectedFile, len(config.Files))
+		copy(updated, config.Files)
+		for i, f := range updated {
+			if newID, ok := idMigrations[f.ID]; ok {
+				updated[i].ID = newID
+			}
+		}
+		config.Files = updated
+		if err := s.saveConfig(config); err != nil {
+			log.Printf("%s: ListFiles: failed to persist migrated file id(s): %v", s.logID(ctx), err)
+		}
+	}
 
 	return result, nil
 }

@@ -159,6 +159,69 @@ func TestListFiles_MergesWithSavedSelections(t *testing.T) {
 	}
 }
 
+// TestListFiles_MigratesIDWhenFileReplacedAtSamePath covers a file whose
+// provider-assigned id changes while its path+name stay the same: the
+// selection should carry forward and the new id should be persisted.
+func TestListFiles_MigratesIDWhenFileReplacedAtSamePath(t *testing.T) {
+	tempDir := t.TempDir()
+	// Pre-create the provider dir so path validation's symlink resolution is
+	// consistent between the (existing) base and the (not-yet-existing) target
+	// path, matching the pattern used by other tests in this file.
+	os.MkdirAll(filepath.Join(tempDir, "mock"), 0755)
+
+	mockProvider := mock.NewProvider("mock")
+	mockProvider.SetFiles([]provider.RemoteFile{
+		{ID: "old-id", Name: "pwsafe.psafe3", Path: "/Documents/Password Safes", Size: 95304},
+	})
+
+	ctx := context.Background()
+	svc := NewSyncableSafesService(ctx, tempDir, mockProvider, 0, 10<<20)
+	defer svc.Stop()
+
+	err := svc.SaveFiles([]SelectedFile{
+		{ID: "old-id", Name: "pwsafe.psafe3", Path: "/Documents/Password Safes", Size: 95304, Selected: true},
+	})
+	if err != nil {
+		t.Fatalf("SaveFiles failed: %v", err)
+	}
+
+	// Simulate the file being re-saved: same name and path, but the provider
+	// now reports a different id and a changed size.
+	mockProvider.SetFiles([]provider.RemoteFile{
+		{ID: "new-id", Name: "pwsafe.psafe3", Path: "/Documents/Password Safes", Size: 95464},
+	})
+
+	files, err := svc.ListFiles(ctx)
+	if err != nil {
+		t.Fatalf("ListFiles failed: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(files))
+	}
+	if files[0].ID != "new-id" {
+		t.Errorf("expected returned file to have the new id, got %q", files[0].ID)
+	}
+	if !files[0].Selected {
+		t.Error("expected the file's selection to carry forward across the id change")
+	}
+
+	// The migration must be persisted immediately, not just reflected in this
+	// one response, since periodic Sync reads the saved config directly.
+	config, err := svc.loadConfig()
+	if err != nil {
+		t.Fatalf("loadConfig failed: %v", err)
+	}
+	if len(config.Files) != 1 {
+		t.Fatalf("expected 1 saved file, got %d", len(config.Files))
+	}
+	if config.Files[0].ID != "new-id" {
+		t.Errorf("expected saved config to be updated with the new id, got %q", config.Files[0].ID)
+	}
+	if !config.Files[0].Selected {
+		t.Error("expected saved config to keep the file selected")
+	}
+}
+
 func TestGetProviderStatus_ReturnsCorrectInfo(t *testing.T) {
 	tempDir := t.TempDir()
 
