@@ -8,7 +8,16 @@ CONFIG_DIR="$current_dir/runtime/config"  # Path to config directory (contains s
 DATA_DIR="$current_dir/runtime/data"     # Path to data directory (contains static/ and provider folders)
 
 mkdir -p "$CONFIG_DIR" "$DATA_DIR"
-touch "$CONFIG_DIR/settings.json"
+if [[ ! -e "$CONFIG_DIR/settings.json" ]]; then
+    cat > "$CONFIG_DIR/settings.json" <<EOF
+{
+  "baseUrl": "http://localhost:${PWSAFE_PORT:-8080}",
+  "providers": {
+    "mock": {}
+  }
+}
+EOF
+fi
 
 # On first start, visit the UI in your browser to choose an auth mode.
 # To skip setup for dev, add "auth": { "mode": "disabled" } to your settings.json.
@@ -28,7 +37,7 @@ cd "$current_dir/backend" && go mod download && go build -o pwsafe-service cmd/p
 echo "Stopping any running instance..."
 pkill -f pwsafe-service || true
 
-cd "$current_dir"
+cd "$current_dir/backend"
 
 echo "Starting pwsafe-service..."
 PWSAFE_CONFIG_DIR="$CONFIG_DIR" \

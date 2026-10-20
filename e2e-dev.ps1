@@ -10,7 +10,11 @@ $backendExecutable = Join-Path $PSScriptRoot "backend/pwsafe-service.exe"
 New-Item -ItemType Directory -Force -Path $configDir, $dataDir | Out-Null
 $settingsPath = Join-Path $configDir "settings.json"
 if (-not (Test-Path -LiteralPath $settingsPath)) {
-    New-Item -ItemType File -Path $settingsPath | Out-Null
+    $serverPort = if ($env:PWSAFE_PORT) { $env:PWSAFE_PORT } else { "8080" }
+    @{
+        baseUrl = "http://localhost:$serverPort"
+        providers = @{ mock = @{} }
+    } | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $settingsPath -Encoding utf8
 }
 
 # On first start, visit the user interface in your browser to choose an authentication mode.
@@ -64,7 +68,12 @@ Write-Host "Starting pwsafe-service..."
 $env:PWSAFE_CONFIG_DIR = $configDir
 $env:PWSAFE_DATA_DIR = $dataDir
 $env:PWSAFE_STATIC_DIR = $staticDir
-& $backendExecutable
-if ($LASTEXITCODE -ne 0) {
-    throw "pwsafe-service exited with code $LASTEXITCODE."
+Push-Location (Join-Path $PSScriptRoot "backend")
+try {
+    & $backendExecutable
+    if ($LASTEXITCODE -ne 0) {
+        throw "pwsafe-service exited with code $LASTEXITCODE."
+    }
+} finally {
+    Pop-Location
 }

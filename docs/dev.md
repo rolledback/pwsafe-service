@@ -25,6 +25,11 @@ The easiest way to run the full stack locally is with the e2e dev scripts:
 
 These scripts install dependencies, build the backend and frontend, and then start the backend, which serves the compiled frontend. Runtime configuration and data are stored under `runtime/`.
 
+If `runtime/config/settings.json` does not exist, both scripts create it with the mock provider enabled.
+They set `baseUrl` to `http://localhost:${PWSAFE_PORT}`. Existing settings files stay unchanged, including empty files.
+Both scripts start the backend from `backend/` so the mock provider can read its test fixtures.
+On first start, choose an authentication mode in the web UI.
+
 ### Component-Specific Development
 
 For detailed instructions on developing each component:
